@@ -1,8 +1,8 @@
 site_name: NYC Airbnb - price prediction
 site_description: Machine learning project on the New York City Airbnb Open Data (2019)
-site_url: https://gubscruz.github.io/nyc-airbnb-project/
-repo_url: https://github.com/gubscruz/nyc-airbnb-project
-repo_name: gubscruz/nyc-airbnb-project
+site_url: https://henriquessm.github.io/nyc-airbnb-project/
+repo_url: https://github.com/henriquessm/nyc-airbnb-project
+repo_name: henriquessm/nyc-airbnb-project
 
 theme:
   name: material

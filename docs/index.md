@@ -12,7 +12,7 @@ The project has a few deliverables and each one gets its own page:
 ## Running the code
 
 ```bash
-git clone https://github.com/gubscruz/nyc-airbnb-project.git
+git clone https://github.com/henriquessm/nyc-airbnb-project.git
 cd nyc-airbnb-project
 pip install -r requirements.txt
 python code/eda.py          # regenerates every figure and docs/projects/eda/results.json

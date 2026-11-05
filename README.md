@@ -3,7 +3,7 @@
 Machine Learning course project: predicting the nightly **price** of Airbnb listings in New York City
 ([NYC Airbnb Open Data, Kaggle](https://www.kaggle.com/datasets/dgomonov/new-york-city-airbnb-open-data)).
 
-Report site: https://gubscruz.github.io/nyc-airbnb-project/
+Report site: https://henriquessm.github.io/nyc-airbnb-project/
 
 **Authors:** Gustavo Cruz, Henrique Mayor and Pedro Fardin.
 

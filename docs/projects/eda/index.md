@@ -17,7 +17,7 @@ ai_use: "AI assistant used to draft code and revise text; every number and every
 
 The question we want a model to answer at the end of the semester is simple: *given what a listing is and where it is, how much does it charge per night?* This report is the first step. No model is trained here; the goal is to understand the data well enough to build the preprocessing pipeline that the neural network will consume.
 
-Everything below is reproducible with two commands from a clean clone (see the [README](https://github.com/gubscruz/nyc-airbnb-project)):
+Everything below is reproducible with two commands from a clean clone (see the [README](https://github.com/henriquessm/nyc-airbnb-project)):
 
 ```bash
 python code/eda.py          # figures + docs/projects/eda/results.json
@@ -320,7 +320,7 @@ The parameter sweep behaves as expected. At perplexity 30 t-SNE breaks the cells
 
 ### C. Pipeline
 
-The pipeline lives in [`code/preprocess.py`](https://github.com/gubscruz/nyc-airbnb-project/blob/main/code/preprocess.py) and is importable:
+The pipeline lives in [`code/preprocess.py`](https://github.com/henriquessm/nyc-airbnb-project/blob/main/code/preprocess.py) and is importable:
 
 ```python
 from code.preprocess import load_data, split_data, build_preprocessor, transform_target
