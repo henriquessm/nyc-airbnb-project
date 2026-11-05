@@ -1,6 +1,6 @@
 # nyc-airbnb-project
 
-Machine Learning course project: predicting the nightly **price** of Airbnb listings in New York City
+Artificial Neural Networks and Deep Learning course project: predicting the nightly **price** of Airbnb listings in New York City
 ([NYC Airbnb Open Data, Kaggle](https://www.kaggle.com/datasets/dgomonov/new-york-city-airbnb-open-data)).
 
 Report site: https://henriquessm.github.io/nyc-airbnb-project/
