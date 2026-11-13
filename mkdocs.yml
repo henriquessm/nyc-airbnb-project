@@ -32,6 +32,7 @@ nav:
   - Home: index.md
   - Projects:
       - 1. EDA: projects/eda/index.md
+      - 2. Regression: projects/regression/index.md
 
 markdown_extensions:
   - tables

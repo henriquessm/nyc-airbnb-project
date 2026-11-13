@@ -13,11 +13,14 @@ Report site: https://henriquessm.github.io/nyc-airbnb-project/
 code/
   preprocess.py   # importable Pipeline + ColumnTransformer (fit on train only)
   eda.py          # regenerates every figure and number of the EDA report
+  model.py        # the MLP (PyTorch) and the training loop with early stopping
+  regression.py   # baselines, network, search, test evaluation and error analysis
 data/
   AB_NYC_2019.csv # the dataset, committed so a clean clone just works
 docs/
   index.md
   projects/eda/   # the EDA report (index.md, figures/, results.json)
+  projects/regression/  # the regression report (index.md, figures/, results.json)
 mkdocs.yml
 ```
 
@@ -27,6 +30,7 @@ mkdocs.yml
 pip install -r requirements.txt
 python code/eda.py          # ~2 min, t-SNE and UMAP are the slow part
 python code/preprocess.py   # prints shapes, NaN check and feature names
+python code/regression.py   # ~5 min on a GPU, CPU works too (slower)
 mkdocs serve                # local preview of the site
 mkdocs gh-deploy            # builds and pushes the site to the gh-pages branch
 ```
