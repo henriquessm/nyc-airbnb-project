@@ -355,7 +355,7 @@ Written for whoever builds the model next.
 **Main findings**
 
 1. **Model log-price, not price.** Skewness 19.1 on the raw target vs 0.63 after `log1p` (Figure 1, Table 1C). A squared-error loss on raw price would be fitting the 298 listings above $1,000.
-2. **Room type and location explain half of the variance before any modelling.** Group medians of borough × room type give an R² of 0.454 on log-price, neighbourhood × room type gives 0.537 (Figures 10 and 11). A model that does not beat ~0.54 R² on the training set has learned nothing from the numerical features.
+2. **Room type and location explain half of the variance before any modelling.** Group means of log-price by borough × room type give an R² of 0.454 on the training set, neighbourhood × room type gives 0.537 (Figures 10 and 11). A model that does not beat ~0.54 R² on the training set has learned nothing from the numerical features.
 3. **Price is geographic in 2-D.** `longitude` alone has Spearman -0.44 with price but the map (Figure 9) shows a "distance to lower Manhattan" shape that needs both coordinates together.
 4. **The numerical features describe how a listing is operated, not what it costs.** PCA's first two axes (review activity, professional host; Figure 16) carry 44.9% of the feature variance and almost no price gradient. t-SNE and UMAP (Figures 17-18) show the price gradient *inside* each room type × borough island.
 5. **Two spikes worth a feature each:** 7.7% of listings at exactly 30 minimum nights (Figure 4a) and 36.0% with zero availability (Figure 4b). The pipeline keeps the information (clipping does not touch 30, and 0 stays 0) but the modelling step could add explicit `is_30_nights` and `is_closed` flags.

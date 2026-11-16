@@ -73,7 +73,7 @@ def to_dollars(log_pred):
 
 def metrics(y_dollars, pred_dollars):
     """Metrics on the original scale (USD). r2_log is R^2 on log1p(price),
-    the scale the EDA used (group medians gave 0.537 there)."""
+    the scale the EDA used (group means gave 0.537 there, in-sample)."""
     y, p = np.asarray(y_dollars, float), np.asarray(pred_dollars, float)
     return {
         "mae": r(mean_absolute_error(y, p), 2),

@@ -42,7 +42,7 @@ The script writes every figure to `figures/` and every number quoted here to [`r
 
 > The network's test MAE (mean over 5 seeds) is **at least 10% lower than the MAE of the best of the trivial and linear baselines**, and the gap is larger than the variation between seeds.
 
-Why 10% and not more: the EDA found that group medians of room type × neighbourhood already explain 53.7% of the variance of log-price. A linear model with one-hot room type and neighbourhood captures most of that for free; what is left for the network is the 2-D shape of the map (EDA Figure 9) and the interactions between room type, location and how the listing is operated (EDA section 3C). A 10% cut in MAE on top of a linear model is what we expected those interactions to be worth.
+Why 10% and not more: the EDA found that group means of log-price by room type × neighbourhood already explain 53.7% of its variance on the training set. A linear model with one-hot room type and neighbourhood captures most of that for free; what is left for the network is the 2-D shape of the map (EDA Figure 9) and the interactions between room type, location and how the listing is operated (EDA section 3C). A 10% cut in MAE on top of a linear model is what we expected those interactions to be worth.
 
 ---
 
@@ -64,7 +64,7 @@ All baselines use the same pipeline output (119 features) and the same log targe
 Reading the table:
 
 - Ridge removes **29% of the error of the trivial model** ($85.80 → $61.00). This is the best of the two required baselines, so it is the reference for the criterion of step 0.
-- R² in dollars is low for every model (0.12 for Ridge) while R² on the log scale is 0.56. Both are correct: the dollar R² is dominated by the squared errors on the few listings at several thousand dollars, which no model gets right (section 6). The log R² of Ridge (0.564) is close to the 0.537 of the group medians in the EDA, which is what a linear model on one-hot categories should give.
+- R² in dollars is low for every model (0.12 for Ridge) while R² on the log scale is 0.56. Both are correct: the dollar R² is dominated by the squared errors on the few listings at several thousand dollars, which no model gets right (section 6). The log R² of Ridge (0.564) is close to the 0.537 of the group means in the EDA, which is what a linear model on one-hot categories should give.
 - Gradient boosting is already $2.89 better than Ridge. Trees capture interactions without being told, so this gap is a first measure of the nonlinear structure available, and a realistic target for the network.
 
 ---
