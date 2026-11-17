@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
     
     
       
@@ -29,10 +29,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -622,9 +622,9 @@
 <p>This is the second delivery of the project. The <a href="../eda/">EDA</a> built the preprocessing pipeline; here we train a multilayer perceptron on top of it and ask two questions: does the network learn something that simpler models do not, and how far can the number it reports be trusted?</p>
 <p>Everything below comes out of one script, from a clean clone:</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
-python<span class="w"> </span>code/regression.py<span class="w">    </span><span class="c1"># ~6 min on a GPU, CPU works too (slower)</span>
+python<span class="w"> </span>code/regression.py<span class="w">    </span><span class="c1"># about 4 minutes on a CPU</span>
 </code></pre></div>
-<p>The script writes every figure to <code>figures/</code> and every number quoted here to <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/docs/projects/regression/results.json"><code>results.json</code></a>. The network and its training loop are in <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/code/model.py"><code>code/model.py</code></a>, the experiment in <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/code/regression.py"><code>code/regression.py</code></a>. Seeds are fixed everywhere (<code>random_state=42</code> for the split, seeds 42 to 46 for the networks), and the seed is set before the network is built, so it fixes the initial weights as well as the batch order.</p>
+<p>The script writes every figure to <code>figures/</code> and every number quoted here to <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/docs/projects/regression/results.json"><code>results.json</code></a>. The network and its training loop are in <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/code/model.py"><code>code/model.py</code></a>, the experiment in <a href="https://github.com/henriquessm/nyc-airbnb-project/blob/main/code/regression.py"><code>code/regression.py</code></a>. Seeds are fixed everywhere (<code>random_state=42</code> for the split, seeds 42 to 44 for the networks), and the seed is set before the network is built, so it fixes the initial weights as well as the batch order. The numbers in this report were generated on a CPU; on a GPU the last decimals can differ.</p>
 <hr />
 <h2 id="0-starting-point">0. Starting point<a class="headerlink" href="#0-starting-point" title="Permanent link">&para;</a></h2>
 <p><strong>Data and split.</strong> Same file, same row filter (the 11 listings with <code>price == 0</code> removed) and the <strong>same 80/20 split as the EDA</strong>, seed 42, stratified on deciles of <code>log1p(price)</code>: 39,107 training rows and 9,777 test rows. The validation set comes out of the training set: 15% of it, with the same seed and the same stratification, so the three sets have the same price range (median $106 in all three).</p>
@@ -654,20 +654,19 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 </tbody>
 </table>
-<p><strong>Pipeline.</strong> The <code>ColumnTransformer</code> from <code>code/preprocess.py</code> is imported as is and <strong>fitted on the 33,240 training rows only</strong>; validation and test are only transformed. Because it is fitted on fewer rows than in the EDA, five fewer neighbourhoods reach the 30-listing threshold, so the output has <strong>119 features instead of 124</strong> (104 neighbourhood columns, the last one being the <code>infrequent</code> bucket; 3.1% of the validation rows fall in it). Nothing else changed. The model is trained on <code>log1p(price)</code> (<code>transform_target()</code>, EDA section 1C: skewness 19.1 on the raw price, 0.63 on the log) and every prediction is brought back with <code>expm1</code> before any metric is computed, so <strong>all metrics are in dollars</strong>.</p>
-<p><strong>Main metric: MAE in USD on the test set.</strong> The target has a tail that no metric can ignore (kurtosis 585.6, one listing at $10,000). RMSE squares the errors and would be decided by the 62 test listings above $1,000; MAE treats a $50 error as a $50 error wherever it happens and is the number a host understands. It also matches the way we train: a model fitted on the log predicts something close to the conditional median of the price, and the median is what minimises the absolute error. RMSE, R² and MedAE are reported next to it.</p>
+<p><strong>Pipeline.</strong> The <code>ColumnTransformer</code> from <code>code/preprocess.py</code> is imported as is and <strong>fitted on the 33,240 training rows only</strong>; validation and test are only transformed. Because it is fitted on fewer rows than in the EDA, five fewer neighbourhoods reach the 30-listing threshold, so the output has <strong>119 features instead of 124</strong>. Nothing else changed. The model is trained on <code>log1p(price)</code> (<code>transform_target()</code>, EDA section 1C: skewness 19.1 on the raw price, 0.63 on the log) and every prediction is brought back with <code>expm1</code> before any metric is computed, so <strong>all metrics are in dollars</strong>.</p>
+<p><strong>Main metric: MAE in USD on the test set.</strong> The target has a long tail (one listing at $10,000). RMSE squares the errors and would be decided by the 62 test listings at $1,000 or more; MAE treats a $50 error as a $50 error wherever it happens and is the number a host understands. RMSE and R² are reported next to it.</p>
 <p><strong>Success criterion, written before training any network:</strong></p>
 <blockquote>
-<p>The network's test MAE (mean over 5 seeds) is <strong>at least 10% lower than the MAE of the best of the trivial and linear baselines</strong>, and the gap is larger than the variation between seeds.</p>
+<p>The network's test MAE (mean over 3 seeds) is <strong>at least 10% lower than the MAE of the best baseline</strong>, and the gap is larger than the variation between seeds.</p>
 </blockquote>
 <p>Why 10% and not more: the EDA found that group means of log-price by room type × neighbourhood already explain 53.7% of its variance on the training set. A linear model with one-hot room type and neighbourhood captures most of that for free; what is left for the network is the 2-D shape of the map (EDA Figure 9) and the interactions between room type, location and how the listing is operated (EDA section 3C). A 10% cut in MAE on top of a linear model is what we expected those interactions to be worth.</p>
 <hr />
 <h2 id="1-baselines">1. Baselines<a class="headerlink" href="#1-baselines" title="Permanent link">&para;</a></h2>
-<p>All baselines use the same pipeline output (119 features) and the same log target, are fitted on train and evaluated on <strong>validation</strong>:</p>
+<p>Both baselines use the same pipeline output (119 features) and the same log target, are fitted on train and evaluated on <strong>validation</strong>:</p>
 <ul>
-<li><strong>Trivial:</strong> <code>DummyRegressor(strategy="mean")</code> on <code>log1p(price)</code>, which predicts the constant $113.12 for every listing, and <code>DummyRegressor(strategy="median")</code> on the price in dollars, which predicts $106.</li>
+<li><strong>Trivial:</strong> <code>DummyRegressor(strategy="mean")</code> on <code>log1p(price)</code>, which predicts the constant $113.12 for every listing.</li>
 <li><strong>Linear:</strong> <code>Ridge</code>, with <code>alpha</code> chosen on validation among 0.01, 0.1, 1, 10 and 100. The MAE is $61.00 to $61.02 for every alpha up to 10 and $61.13 at 100: with 33,240 rows for 119 features the penalty barely matters. <code>alpha = 10</code> was kept.</li>
-<li><strong>Optional:</strong> <code>HistGradientBoostingRegressor</code> with default settings (<code>random_state=42</code>), as a nonlinear reference.</li>
 </ul>
 <table>
 <thead>
@@ -676,8 +675,6 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <th>MAE ($)</th>
 <th>RMSE ($)</th>
 <th>R²</th>
-<th>MedAE ($)</th>
-<th>R² on log-price</th>
 </tr>
 </thead>
 <tbody>
@@ -686,88 +683,67 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <td>85.96</td>
 <td>240.07</td>
 <td>-0.031</td>
-<td>48.12</td>
-<td>0.000</td>
-</tr>
-<tr>
-<td>Dummy, median (constant $106)</td>
-<td>85.80</td>
-<td>241.40</td>
-<td>-0.042</td>
-<td>46.00</td>
-<td>-0.009</td>
 </tr>
 <tr>
 <td>Ridge (<code>alpha=10</code>)</td>
 <td><strong>61.00</strong></td>
 <td>221.40</td>
 <td>0.124</td>
-<td>25.74</td>
-<td>0.564</td>
-</tr>
-<tr>
-<td>Gradient boosting</td>
-<td>58.11</td>
-<td>217.61</td>
-<td>0.153</td>
-<td>24.05</td>
-<td>0.612</td>
 </tr>
 </tbody>
 </table>
 <p>Reading the table:</p>
 <ul>
-<li>Ridge removes <strong>29% of the error of the trivial model</strong> ($85.80 → $61.00). This is the best of the two required baselines, so it is the reference for the criterion of step 0.</li>
-<li>R² in dollars is low for every model (0.12 for Ridge) while R² on the log scale is 0.56. Both are correct: the dollar R² is dominated by the squared errors on the few listings at several thousand dollars, which no model gets right (section 6). The log R² of Ridge (0.564) is close to the 0.537 of the group means in the EDA, which is what a linear model on one-hot categories should give.</li>
-<li>Gradient boosting is already $2.89 better than Ridge. Trees capture interactions without being told, so this gap is a first measure of the nonlinear structure available, and a realistic target for the network.</li>
+<li>Ridge removes <strong>29% of the error of the trivial model</strong> ($85.96 → $61.00). It is the best baseline, so it is the reference for the criterion of step 0.</li>
+<li>R² is low even for Ridge (0.12). R² is computed from squared errors in dollars, so it is dominated by the few listings at several thousand dollars, which no model gets right (section 6). The dummy's R² is slightly negative because it predicts the mean of the log-price (<span class="arithmatex">\(113), which is below the mean price in dollars (\)</span>152).</li>
 </ul>
 <hr />
 <h2 id="2-the-network">2. The network<a class="headerlink" href="#2-the-network" title="Permanent link">&para;</a></h2>
 <p>The network is a plain MLP in PyTorch (<code>code/model.py</code>, class <code>MLP</code>):</p>
-<div class="highlight"><pre><span></span><code>input (119) -&gt; Linear 256 -&gt; ReLU -&gt; [Dropout] -&gt; Linear 128 -&gt; ReLU -&gt; [Dropout] -&gt; Linear 1
+<div class="highlight"><pre><span></span><code>input (119) -&gt; Linear 256 -&gt; ReLU -&gt; Linear 128 -&gt; ReLU -&gt; Linear 1
 </code></pre></div>
-<p>The base configuration is two hidden layers of <strong>256 and 128 units</strong>, no regularisation; the version that went to the test set adds dropout 0.2 (section 4). Every choice:</p>
+<p>This is the base configuration: two hidden layers of <strong>256 and 128 units</strong>. The version that went to the test set has the same shape with half the widths, 128 and 64 (section 4). Every choice:</p>
 <ul>
-<li><strong>Two hidden layers.</strong> One hidden layer is enough in theory (universal approximation), but the theorem says nothing about how many units it takes. The EDA showed a structure in two levels: a categorical cell first (room type × borough), then a continuous gradient inside the cell (EDA Figures 17-18). Two layers let the first build features such as "entire home in lower Manhattan" and the second combine them. A third layer was tried in the search (section 4) and did not help.</li>
+<li><strong>Two hidden layers.</strong> The EDA showed a structure in two levels: a categorical cell first (room type × borough), then a continuous gradient inside the cell (EDA Figures 17-18). Two layers let the first build features such as "entire home in lower Manhattan" and the second combine them. A third layer was tried in the search (section 4) and made no real difference.</li>
 <li><strong>Widths 256 → 128.</strong> The first layer is wider than the input (119) so that it has room for combinations of inputs, then the width halves towards the single output. The search also tried 128 → 64 and 512 → 256.</li>
-<li><strong>ReLU.</strong> Its derivative is exactly 1 where the unit is active, so the gradient is not shrunk on the way back (a sigmoid shrinks it by at least 4 per layer), and it is the default for MLPs on tabular data.</li>
-<li><strong>He (Kaiming) initialisation</strong> for the hidden layers, biases at zero. The variance of the activations is multiplied at each layer by n·σ²·ρ, with n the fan-in and ρ = 1/2 for ReLU (it zeroes half of the inputs); He sets σ² = 2/n so the factor is 1. PyTorch's default for <code>nn.Linear</code> has variance 1/(3n), a sixth of that. With two layers either would train, but He is the one made for ReLU.</li>
-<li><strong>Output: 1 linear unit</strong>, no activation, because log-price is an unbounded real number. Its bias starts at the mean of the training log-price (4.737, i.e. $113): the network starts exactly at the trivial baseline instead of spending the first epochs learning the offset.</li>
-<li><strong>Loss: Huber with δ = 1 on <code>log1p(price)</code></strong> (<code>nn.HuberLoss(delta=1.0)</code>). The EDA found prices that are not real prices: $10,000 listings, "blocking" prices on closed calendars. On the log scale most residuals are within ±1 (a factor of e ≈ 2.7 on the price; Figure 3c), and there Huber is the squared error. Beyond 1 it grows linearly, so a $9,999 listing predicted at $117 (a log residual of 4.4) pulls the weights like a residual of 4.4, not like 4.4² = 19. MSE on the log would let a few placeholder prices steer the fit; MAE would be robust but has a constant gradient that does not shrink near the optimum.</li>
+<li><strong>ReLU.</strong> Its derivative is exactly 1 where the unit is active, so the gradient is not shrunk on the way back, and it is the default for MLPs on tabular data.</li>
+<li><strong>He (Kaiming) initialisation</strong> for the hidden layers, biases at zero. ReLU zeroes about half of the units, which halves the variance of the signal at each layer; He compensates by drawing the weights with variance 2/n (n = number of inputs of the layer), so the signal keeps the same size from layer to layer.</li>
+<li><strong>Output: 1 linear unit</strong>, no activation, because log-price is an unbounded real number.</li>
+<li><strong>Loss: MSE on <code>log1p(price)</code></strong> (<code>nn.MSELoss</code>), the standard loss for regression. Because the target is the log, a $10,000 listing predicted at about $110 is a residual of about 4.5, not of $9,900, so the squared error is no longer decided by a handful of rows.</li>
 </ul>
 <p><strong>Number of parameters.</strong></p>
 <table>
 <thead>
 <tr>
 <th>layer</th>
-<th>computation</th>
-<th>parameters</th>
+<th>base [256, 128]</th>
+<th>chosen [128, 64]</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>hidden 1</td>
-<td>119 × 256 + 256</td>
-<td>30,720</td>
+<td>119 × 256 + 256 = 30,720</td>
+<td>119 × 128 + 128 = 15,360</td>
 </tr>
 <tr>
 <td>hidden 2</td>
-<td>256 × 128 + 128</td>
-<td>32,896</td>
+<td>256 × 128 + 128 = 32,896</td>
+<td>128 × 64 + 64 = 8,256</td>
 </tr>
 <tr>
 <td>output</td>
-<td>128 × 1 + 1</td>
-<td>129</td>
+<td>128 + 1 = 129</td>
+<td>64 + 1 = 65</td>
 </tr>
 <tr>
 <td><strong>total</strong></td>
-<td></td>
 <td><strong>63,745</strong></td>
+<td><strong>23,681</strong></td>
 </tr>
 </tbody>
 </table>
-<p>That is <strong>1.92 parameters per training row</strong> (63,745 / 33,240). The network has more than enough capacity to memorise noise, and Figure 1(b) shows that it does if nobody stops it. This is why early stopping (section 3) is not optional, and why section 4 tries to regularise it.</p>
+<p>The base network has <strong>1.92 parameters per training row</strong> (63,745 / 33,240), the chosen one 0.71. Both have enough capacity to memorise noise, and Figure 1 shows the training loss still falling after the validation loss has stopped. This is why early stopping (section 3) is not optional.</p>
 <hr />
 <h2 id="3-training">3. Training<a class="headerlink" href="#3-training" title="Permanent link">&para;</a></h2>
 <table>
@@ -782,32 +758,32 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <tr>
 <td>optimizer</td>
 <td><strong>AdamW</strong></td>
-<td>Adam is the course's starting point for an MLP on tabular data: one learning rate works for all layers because each parameter's step is rescaled by the running size of its gradients. AdamW is Adam with the weight decay applied directly to the weights instead of through the gradient, which matters in section 4. Biases and normalisation gains are not decayed.</td>
+<td>Adam is the course's starting point for an MLP on tabular data: one learning rate works for all layers because each parameter's step is rescaled by the running size of its gradients. AdamW is Adam with the weight decay applied directly to the weights, which is what section 4 tests.</td>
 </tr>
 <tr>
 <td>learning rate</td>
 <td><strong>1e-3</strong></td>
-<td>Adam's usual default. The search (section 4) tried 3e-4 and 3e-3: 3e-3 stops at epoch 6 with a worse MAE ($59.14 vs $58.50 for the same network), 3e-4 needs 71 epochs to get to the same place.</td>
+<td>Adam's usual default. The search (section 4) tried 3e-4 and 3e-3 on the base network: 3e-3 is the worst configuration of the table (<span class="arithmatex">\(60.00), 3e-4 is slightly better (\)</span>59.23 vs $59.67) but needs 47 epochs instead of 21.</td>
 </tr>
 <tr>
 <td>batch</td>
 <td><strong>256</strong></td>
-<td>Inside the usual 32-512 range: 130 updates per epoch, a gradient estimate with noise ∝ 1/√B that is neither too noisy nor too smooth, and fast on the GPU.</td>
+<td>Inside the usual 32-512 range: 130 updates per epoch, a gradient that is neither too noisy nor too smooth.</td>
 </tr>
 <tr>
 <td>epochs</td>
 <td><strong>up to 300, patience 20</strong></td>
-<td>Validation loss is evaluated after every epoch; training stops when it has not improved for 20 epochs and the <strong>best weights are restored</strong>. The validation curve has bumps that last 3-4 epochs (Figure 1a), so a patience of 20 does not stop on noise.</td>
+<td>Validation loss is evaluated after every epoch; training stops when it has not improved for 20 epochs and the <strong>best weights are restored</strong>. The validation curve has bumps that last 2-3 epochs (Figure 1), so a patience of 20 does not stop on noise.</td>
 </tr>
 </tbody>
 </table>
-<p>The loop (<code>train()</code> in <code>code/model.py</code>) is the course's skeleton: train on shuffled mini-batches, switch to <code>model.eval()</code> and compute the validation loss under <code>torch.no_grad()</code>, keep a copy of the <code>state_dict</code> whenever it improves, stop after <code>patience</code> epochs without improvement and load the best copy back. The copy is kept in memory instead of <code>best.pt</code> on disk, which is the same thing. Both curves are computed in eval mode on the whole set at the end of each epoch, so dropout does not make the training curve look worse than it is.</p>
+<p>The loop (<code>train()</code> in <code>code/model.py</code>) is the course's skeleton: train on shuffled mini-batches, switch to <code>model.eval()</code> and compute the validation loss under <code>torch.no_grad()</code>, keep a copy of the <code>state_dict</code> whenever it improves, stop after <code>patience</code> epochs without improvement and load the best copy back. Both curves are computed in eval mode on the whole set at the end of each epoch.</p>
 <p><img alt="Figure 1" src="figures/fig01_curves_base.png" /></p>
-<p><strong>Reading Figure 1.</strong> The validation loss starts at 0.0933 at epoch 1, already close to its best, because the output bias starts at the mean and Adam moves fast. It reaches its <strong>minimum of 0.0895 at epoch 13</strong>; the training loss at that point is 0.078. After that the two curves separate: the training loss keeps falling (0.069 when early stopping fires at epoch 33) while the validation loss drifts up to 0.096. <strong>Overfitting starts around epoch 13.</strong> Panel (b) is the same network left for 120 epochs without early stopping: training loss 0.047, validation loss 0.109 at the end, the textbook shape of a model memorising the training set. It converges, quickly, and then it overfits; early stopping gives back the epoch-13 weights.</p>
+<p><strong>Reading Figure 1.</strong> Both losses fall fast in the first five epochs (the validation loss is 0.334 after epoch 1) and the network <strong>converges</strong>: from about epoch 6 the validation loss hovers around 0.20 to 0.21, with bumps at epochs 14 and 28. Its <strong>minimum is 0.1999 at epoch 21</strong>; the training loss at that point is 0.1755. The training loss never stops falling (0.1621 at epoch 41, when early stopping fires) while the validation loss does not improve any more (0.2033). <strong>The two curves separate from about epoch 6, and that is where overfitting starts:</strong> everything the network learns after that is specific to the training rows. Early stopping gives back the epoch-21 weights.</p>
 <hr />
 <h2 id="4-regularisation-and-hyperparameters">4. Regularisation and hyperparameters<a class="headerlink" href="#4-regularisation-and-hyperparameters" title="Permanent link">&para;</a></h2>
 <h3 id="techniques-compared">Techniques compared<a class="headerlink" href="#techniques-compared" title="Permanent link">&para;</a></h3>
-<p>Four variants of the base network, same seed, same everything else, compared with the network without any regularisation. All numbers on validation, at the best epoch:</p>
+<p>Two techniques, each added alone to the base network, same seed, same everything else, compared with the network without any. All numbers on validation, at the best epoch:</p>
 <table>
 <thead>
 <tr>
@@ -820,224 +796,137 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </thead>
 <tbody>
 <tr>
-<td>none</td>
-<td>58.50</td>
-<td>0.0895</td>
-<td>13</td>
-<td>0.0115</td>
+<td><strong>none</strong></td>
+<td><strong>59.67</strong></td>
+<td>0.1999</td>
+<td>21</td>
+<td>0.0244</td>
 </tr>
 <tr>
-<td>weight decay 0.05 (AdamW)</td>
-<td>58.54</td>
-<td>0.0894</td>
-<td>13</td>
-<td>0.0110</td>
+<td>weight decay 0.05</td>
+<td>59.76</td>
+<td>0.2002</td>
+<td>21</td>
+<td>0.0236</td>
 </tr>
 <tr>
-<td><strong>dropout 0.2</strong></td>
-<td><strong>58.03</strong></td>
-<td><strong>0.0890</strong></td>
-<td>42</td>
-<td>0.0142</td>
-</tr>
-<tr>
-<td>BatchNorm</td>
-<td>58.95</td>
-<td>0.0900</td>
-<td>6</td>
-<td>0.0081</td>
-</tr>
-<tr>
-<td>dropout 0.2 + weight decay 0.05</td>
-<td>58.12</td>
-<td>0.0890</td>
-<td>42</td>
-<td>0.0141</td>
+<td>dropout 0.2</td>
+<td>59.80</td>
+<td>0.2001</td>
+<td>36</td>
+<td>0.0149</td>
 </tr>
 </tbody>
 </table>
 <p><img alt="Figure 2" src="figures/fig02_regularisation.png" /></p>
 <ul>
-<li><strong>Dropout 0.2</strong> (each hidden unit switched off with probability 0.2 during training, the survivors scaled by 1/0.8, nothing switched off at evaluation) is the only technique that improves validation: $58.03 vs $58.50. Figure 2(b) shows why: the generalisation gap grows <strong>about half as fast per epoch</strong> (0.006 at epoch 13 against 0.0115 without it), so the network can train for 42 epochs instead of 13 before validation turns. The gap at the best epoch is larger only because it is reached much later.</li>
-<li><strong>Weight decay 0.05</strong> changes almost nothing. With AdamW each step multiplies the weights by (1 - lr·λ) = (1 - 5·10⁻⁵); over the ~1,700 steps before early stopping that is a shrinkage of about 8%. Early stopping already limits how far the weights travel, so the extra penalty arrives too late to matter. Added to dropout it does not help either ($58.12).</li>
-<li><strong>BatchNorm</strong> after each hidden linear layer (before the ReLU, dropout would go after it) converges fastest (best epoch 6) and has the smallest gap, but the worst MAE ($58.95). Our inputs are already standardised by the pipeline, so there is little scale to fix, and the noise BatchNorm injects through the batch statistics did not translate into a better fit here.</li>
+<li><strong>Weight decay 0.05</strong> (each step shrinks every weight a little towards zero) changes almost nothing. Each step multiplies the weights by (1 - lr·λ) = (1 - 5·10⁻⁵); over the 2,730 steps up to the best epoch that is a shrinkage of about 13%. The curves in Figure 2 are on top of the ones without it.</li>
+<li><strong>Dropout 0.2</strong> (each hidden unit switched off with probability 0.2 during training, nothing switched off at evaluation) does what it is supposed to do: Figure 2(b) shows the gap between validation and training growing about half as fast, and the best epoch moves from 21 to 36. But the validation loss ends in the same place (0.2001 vs 0.1999) and the MAE is not better.</li>
 </ul>
-<p>The differences are small: all five variants are within $0.92 of each other. The table says dropout is the one worth keeping; it does not say regularisation transforms this model.</p>
+<p><strong>Neither technique improved the validation MAE</strong>: the three variants are within $0.13 of each other. Early stopping is already limiting the overfitting, and the two techniques have nothing left to add.</p>
 <h3 id="search">Search<a class="headerlink" href="#search" title="Permanent link">&para;</a></h3>
-<p>The grid has 216 combinations: hidden layers (128, 64), (256, 128), (512, 256) or (256, 256, 128); learning rate 3e-4, 1e-3 or 3e-3; weight decay 0, 0.01 or 0.1; dropout 0, 0.1 or 0.3; BatchNorm or not. We sampled <strong>12 of them at random</strong> (seed 42), added the base network and the four variants above, and trained all <strong>17 configurations</strong> with early stopping, batch 256. The rule, fixed before running it, is the lowest validation MAE. Sorted:</p>
+<p><strong>8 configurations</strong>: the base network and one change at a time from it (the two regularised variants above, three other sizes and two other learning rates). All trained with early stopping, batch 256, seed 42. The rule, fixed before running it, is the lowest validation MAE. Sorted:</p>
 <table>
 <thead>
 <tr>
 <th>#</th>
 <th>configuration</th>
+<th>what changed</th>
 <th>params</th>
 <th>best epoch</th>
 <th>val MAE ($)</th>
 <th>val RMSE ($)</th>
-<th>val MedAE ($)</th>
+<th>val R²</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
-<td><strong>[256×128] lr 1e-3, dropout 0.2</strong></td>
-<td>63,745</td>
-<td>42</td>
-<td><strong>58.03</strong></td>
-<td>219.06</td>
-<td>23.19</td>
+<td><strong>[128×64] lr 1e-3</strong></td>
+<td>smaller</td>
+<td>23,681</td>
+<td>43</td>
+<td><strong>59.23</strong></td>
+<td>217.78</td>
+<td>0.152</td>
 </tr>
 <tr>
 <td>2</td>
-<td>[256×128] lr 1e-3, dropout 0.2, wd 0.05</td>
+<td>[256×128] lr 3e-4</td>
+<td>lower learning rate</td>
 <td>63,745</td>
-<td>42</td>
-<td>58.12</td>
-<td>218.95</td>
-<td>23.09</td>
+<td>47</td>
+<td>59.23</td>
+<td>217.01</td>
+<td>0.158</td>
 </tr>
 <tr>
 <td>3</td>
-<td>[256×256×128] lr 1e-3</td>
-<td>129,537</td>
-<td>13</td>
-<td>58.21</td>
-<td>219.90</td>
-<td>23.20</td>
+<td>[512×256] lr 1e-3</td>
+<td>wider</td>
+<td>193,025</td>
+<td>18</td>
+<td>59.36</td>
+<td>217.19</td>
+<td>0.157</td>
 </tr>
 <tr>
 <td>4</td>
-<td>[512×256] lr 1e-3, wd 0.01, dropout 0.1, BN</td>
-<td>194,561</td>
+<td>[256×256×128] lr 1e-3</td>
+<td>one more layer</td>
+<td>129,537</td>
 <td>21</td>
-<td>58.32</td>
-<td>219.42</td>
-<td>23.36</td>
+<td>59.42</td>
+<td>217.65</td>
+<td>0.153</td>
 </tr>
 <tr>
 <td>5</td>
-<td>[512×256] lr 3e-3, dropout 0.1, BN</td>
-<td>194,561</td>
+<td>[256×128] lr 1e-3</td>
+<td>base</td>
+<td>63,745</td>
 <td>21</td>
-<td>58.35</td>
-<td>219.34</td>
-<td>23.75</td>
+<td>59.67</td>
+<td>217.76</td>
+<td>0.152</td>
 </tr>
 <tr>
 <td>6</td>
-<td>[128×64] lr 1e-3, dropout 0.1</td>
-<td>23,681</td>
-<td>55</td>
-<td>58.43</td>
-<td>218.01</td>
-<td>23.74</td>
+<td>[256×128] lr 1e-3, weight decay 0.05</td>
+<td>weight decay</td>
+<td>63,745</td>
+<td>21</td>
+<td>59.76</td>
+<td>217.70</td>
+<td>0.153</td>
 </tr>
 <tr>
 <td>7</td>
-<td>[128×64] lr 3e-3, wd 0.01</td>
-<td>23,681</td>
-<td>13</td>
-<td>58.50</td>
-<td>219.13</td>
-<td>23.77</td>
+<td>[256×128] lr 1e-3, dropout 0.2</td>
+<td>dropout</td>
+<td>63,745</td>
+<td>36</td>
+<td>59.80</td>
+<td>218.29</td>
+<td>0.148</td>
 </tr>
 <tr>
 <td>8</td>
-<td>[256×128] lr 1e-3 (base)</td>
-<td>63,745</td>
-<td>13</td>
-<td>58.50</td>
-<td>219.11</td>
-<td>23.26</td>
-</tr>
-<tr>
-<td>9</td>
-<td>[256×256×128] lr 3e-3, wd 0.1, dropout 0.3, BN</td>
-<td>130,817</td>
-<td>54</td>
-<td>58.51</td>
-<td>219.86</td>
-<td>24.09</td>
-</tr>
-<tr>
-<td>10</td>
-<td>[256×128] lr 1e-3, wd 0.05</td>
-<td>63,745</td>
-<td>13</td>
-<td>58.54</td>
-<td>219.07</td>
-<td>23.23</td>
-</tr>
-<tr>
-<td>11</td>
-<td>[512×256] lr 3e-4, dropout 0.3, BN</td>
-<td>194,561</td>
-<td>71</td>
-<td>58.56</td>
-<td>218.77</td>
-<td>24.09</td>
-</tr>
-<tr>
-<td>12</td>
-<td>[256×128] lr 3e-3, BN</td>
-<td>64,513</td>
-<td>13</td>
-<td>58.64</td>
-<td>219.67</td>
-<td>24.24</td>
-</tr>
-<tr>
-<td>13</td>
-<td>[512×256] lr 3e-3, wd 0.1, dropout 0.1, BN</td>
-<td>194,561</td>
-<td>26</td>
-<td>58.95</td>
-<td>217.52</td>
-<td>24.62</td>
-</tr>
-<tr>
-<td>14</td>
-<td>[256×128] lr 1e-3, BN</td>
-<td>64,513</td>
-<td>6</td>
-<td>58.95</td>
-<td>218.87</td>
-<td>24.32</td>
-</tr>
-<tr>
-<td>15</td>
-<td>[128×64] lr 1e-3</td>
-<td>23,681</td>
-<td>17</td>
-<td>59.07</td>
-<td>218.22</td>
-<td>24.42</td>
-</tr>
-<tr>
-<td>16</td>
 <td>[256×128] lr 3e-3</td>
+<td>higher learning rate</td>
 <td>63,745</td>
-<td>6</td>
-<td>59.14</td>
-<td>218.08</td>
-<td>25.01</td>
-</tr>
-<tr>
-<td>17</td>
-<td>[256×256×128] lr 3e-3, wd 0.1</td>
-<td>129,537</td>
-<td>6</td>
-<td>59.41</td>
-<td>217.02</td>
-<td>25.08</td>
+<td>25</td>
+<td>60.00</td>
+<td>217.29</td>
+<td>0.156</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Chosen: [256×128], ReLU, dropout 0.2, AdamW lr 1e-3, no weight decay, batch 256.</strong> Patterns in the table: dropout appears in 5 of the top 6; the three runs that stopped at epoch 6 (lr 3e-3, or BatchNorm, without dropout) are among the bottom four; size matters little, every width from 23,681 to 194,561 parameters appears both in the top half and in the bottom half.</p>
-<p><strong>How much the ranking can be trusted.</strong> The whole table spans $1.38, and the top 8 are within $0.47. Section 5 retrains the chosen configuration with 5 seeds: its validation MAE varies from $58.03 to $58.53 (standard deviation $0.19) just by changing the seed. The configuration we chose was evaluated on its luckiest seed (the mean over the 5 seeds is $58.34), which is the selection optimism the course warns about: pick the best of 17 noisy numbers and the winner is partly the noise. The top 3 or 4 configurations are statistically the same model; we report the one the rule picked and do not claim it is better than the runners-up.</p>
+<p><strong>Chosen: [128×64], ReLU, AdamW lr 1e-3, no weight decay, no dropout, batch 256.</strong> The first two configurations tie at $59.23; the script keeps the first one in the list, which is also the one with 2.7 times fewer parameters, so we kept it.</p>
+<p><strong>How much the ranking can be trusted.</strong> Not much. The whole table spans $0.77. Section 5 retrains the chosen configuration with 3 seeds and its validation MAE goes from $59.23 to $59.53 (standard deviation $0.16) just by changing the seed. The top four are within $0.19 of each other, about one standard deviation, so they are the same model as far as this validation set can tell. What the table does say: size matters little (from 23,681 to 193,025 parameters, $0.44 of difference), and the highest learning rate is the worst.</p>
 <hr />
 <h2 id="5-test-evaluation">5. Test evaluation<a class="headerlink" href="#5-test-evaluation" title="Permanent link">&para;</a></h2>
-<p>The chosen configuration was trained again from scratch with <strong>5 seeds (42 to 46)</strong>, each with early stopping on the same validation set, and each evaluated <strong>once</strong> on the test set. The baselines were fitted in section 1 and are evaluated on the same test rows; gradient boosting was also run with the same 5 seeds. Nothing in sections 1-4 was chosen with the test set, and the test set was not used to change anything afterwards.</p>
+<p>The chosen configuration was trained again from scratch with <strong>3 seeds (42, 43, 44)</strong>, each with early stopping on the same validation set, and each evaluated <strong>once</strong> on the test set. The baselines were fitted in section 1 and are evaluated on the same test rows. Nothing in sections 1-4 was chosen with the test set, and the test set was not used to change anything afterwards.</p>
 <table>
 <thead>
 <tr>
@@ -1045,9 +934,6 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <th>MAE ($)</th>
 <th>RMSE ($)</th>
 <th>R²</th>
-<th>MedAE ($)</th>
-<th>MAPE (%)</th>
-<th>R² on log-price</th>
 </tr>
 </thead>
 <tbody>
@@ -1056,58 +942,31 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <td>86.06</td>
 <td>267.74</td>
 <td>-0.025</td>
-<td>48.12</td>
-<td>60.94</td>
-<td>0.000</td>
-</tr>
-<tr>
-<td>Dummy, median</td>
-<td>85.93</td>
-<td>268.94</td>
-<td>-0.034</td>
-<td>46.00</td>
-<td>56.99</td>
-<td>-0.009</td>
 </tr>
 <tr>
 <td>Ridge</td>
 <td>62.18</td>
 <td>252.34</td>
 <td>0.090</td>
-<td>26.27</td>
-<td>34.45</td>
-<td>0.550</td>
 </tr>
 <tr>
-<td>Gradient boosting (5 seeds)</td>
-<td><strong>58.71 ± 0.08</strong></td>
-<td>246.87 ± 0.52</td>
-<td>0.129 ± 0.004</td>
-<td>23.97 ± 0.09</td>
-<td>32.21 ± 0.10</td>
-<td>0.603 ± 0.001</td>
-</tr>
-<tr>
-<td><strong>MLP, chosen (5 seeds)</strong></td>
-<td><strong>59.10 ± 0.23</strong></td>
-<td>248.47 ± 1.10</td>
-<td>0.118 ± 0.008</td>
-<td><strong>23.59 ± 0.09</strong></td>
-<td><strong>31.83 ± 0.27</strong></td>
-<td>0.589 ± 0.002</td>
+<td><strong>MLP, chosen (3 seeds)</strong></td>
+<td><strong>60.20 ± 0.33</strong></td>
+<td><strong>247.98 ± 0.81</strong></td>
+<td><strong>0.121 ± 0.006</strong></td>
 </tr>
 </tbody>
 </table>
-<p>Per seed, the network's test MAE is $58.80, $59.42, $59.15, $59.14 and $59.01, with early stopping at epochs 42, 20, 39, 40 and 33. MAPE is reported because the price never gets close to zero (the minimum is $10).</p>
+<p>Per seed, the network's test MAE is $59.87, $60.53 and $60.19, with the best epoch at 43, 27 and 42.</p>
 <p><img alt="Figure 3" src="figures/fig03_pred_vs_actual.png" /></p>
-<p><strong>Figure 3.</strong> (a) On log axes the cloud follows the diagonal from $30 to about $300 and then flattens: the network predicts more than $600 for only 11 test listings while 166 cost more than that, so the expensive end is underestimated, some listings by thousands of dollars. (b) In dollars the residuals fan out as the prediction grows (a $200 listing can be off by $200, a <span class="arithmatex">\(50 one cannot), and the parallel diagonal stripes are the round prices hosts choose (\)</span>100, $150, <span class="arithmatex">\(200) minus a smooth prediction; 85 points fall beyond ±\)</span>600. (c) On the log scale, the scale the network was trained on, the residuals are centred on zero with a roughly constant spread, plus a handful of points 3 to 4.4 above the line: the listings priced at several thousand dollars.</p>
+<p><strong>Figure 3.</strong> (a) On log axes the cloud follows the diagonal from $30 to about $300 and then flattens: the network predicts more than $600 for only 4 test listings while 166 cost more than that, so the expensive end is underestimated, some listings by thousands of dollars. (b) In dollars the residuals fan out as the prediction grows (a $200 listing can be off by $200, a <span class="arithmatex">\(50 one cannot), and the parallel curved stripes are the round prices hosts choose (\)</span>100, $150, <span class="arithmatex">\(200) minus a smooth prediction; 83 points fall beyond ±\)</span>600.</p>
 <p><img alt="Figure 4" src="figures/fig04_test_seeds.png" /></p>
-<p><strong>Was the criterion met? No.</strong> The network's test MAE is <strong>4.95% lower</strong> than Ridge's ($59.10 vs $62.18); the criterion asked for 10% (a MAE of $55.96 or less).</p>
-<p><strong>Is the gap larger than the variation between seeds?</strong> Against Ridge, yes: the gap is $3.08 and the network's standard deviation over seeds is <span class="arithmatex">\(0.23, so the gap is **13.6 standard deviations**, and the worst seed (\)</span>59.42) is still $2.76 better than Ridge. The network is reliably better than the linear model, just not by as much as we hoped. Against gradient boosting, no: boosting is $0.40 better on average, about 1.7 of the network's standard deviations, and its spread is smaller. <strong>On this table, the network and boosting tie, with a slight edge to boosting</strong>, which trains in a few seconds with default settings. The network is slightly better on MedAE and MAPE (the typical listing) and slightly worse on MAE, RMSE and R² (the tail).</p>
-<p><strong>Why RMSE and R² look so bad.</strong> RMSE/MAE = 248.5/59.1 = 4.2, against about 1.25 for Gaussian errors: a few huge misses. The 1% largest errors (97 listings) account for 27.2% of the total absolute error, and the 62 test listings above $1,000 are enough to keep R² in dollars near 0.12 for every model. Without those 62 listings the network's MAE is $45.45 (RMSE $85.37) against $48.56 for Ridge. On the log scale, R² is 0.589 for the network against 0.550 for Ridge.</p>
+<p><strong>Was the criterion met? No.</strong> The network's test MAE is <strong>3.19% lower</strong> than Ridge's ($60.20 vs $62.18); the criterion asked for 10% (a MAE of $55.96 or less).</p>
+<p><strong>Is the gap larger than the variation between seeds? Yes.</strong> The gap to Ridge is $1.98 and the network's standard deviation over seeds is <span class="arithmatex">\(0.33, so the gap is **6.0 standard deviations**, and the worst seed (\)</span>60.53) is still $1.65 better than Ridge (Figure 4). The network is reliably better than the linear model, just by much less than we expected.</p>
+<p><strong>Why RMSE and R² look so bad.</strong> RMSE is 4.1 times the MAE (247.98 / 60.20), which means a few huge misses: the 62 test listings at $1,000 or more are enough to keep R² near 0.1 for every model. Section 6 shows which listings they are.</p>
 <hr />
 <h2 id="6-error-analysis">6. Error analysis<a class="headerlink" href="#6-error-analysis" title="Permanent link">&para;</a></h2>
-<p>All numbers in this section use the seed-42 network on the test set (MAE $58.80). Nothing here was used to choose or change the model. "Bias" is the mean of prediction minus actual: negative means the network underestimates.</p>
+<p>All numbers in this section use the seed-42 network on the test set (MAE $59.87). Nothing here was used to choose or change the model. "Bias" is the mean of prediction minus actual: negative means the network underestimates.</p>
 <p><img alt="Figure 5" src="figures/fig05_error_groups.png" /></p>
 <table>
 <thead>
@@ -1115,7 +974,6 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <th>group</th>
 <th>n</th>
 <th>MAE ($)</th>
-<th>MedAE ($)</th>
 <th>bias ($)</th>
 <th>median price ($)</th>
 <th>MAE / median price</th>
@@ -1125,165 +983,114 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <tr>
 <td>Entire home/apt</td>
 <td>5,129</td>
-<td>84.32</td>
-<td>38.94</td>
-<td>-41.42</td>
+<td>85.52</td>
+<td>-39.36</td>
 <td>160</td>
 <td>53%</td>
 </tr>
 <tr>
 <td>Private room</td>
 <td>4,428</td>
-<td>30.88</td>
-<td>14.72</td>
-<td>-11.14</td>
+<td>31.89</td>
+<td>-12.17</td>
 <td>70</td>
-<td>44%</td>
+<td>46%</td>
 </tr>
 <tr>
 <td>Shared room</td>
 <td>220</td>
-<td>25.78</td>
-<td>10.36</td>
-<td>-7.67</td>
+<td>25.42</td>
+<td>-9.93</td>
 <td>49</td>
-<td>53%</td>
+<td>52%</td>
 </tr>
 <tr>
 <td>Manhattan</td>
 <td>4,301</td>
-<td><strong>82.35</strong></td>
-<td>32.01</td>
-<td>-43.88</td>
+<td><strong>84.40</strong></td>
+<td>-43.03</td>
 <td>150</td>
-<td>55%</td>
+<td>56%</td>
 </tr>
 <tr>
 <td>Brooklyn</td>
 <td>4,035</td>
-<td>43.25</td>
-<td>19.75</td>
-<td>-16.01</td>
+<td>43.69</td>
+<td>-14.62</td>
 <td>91</td>
 <td>48%</td>
 </tr>
 <tr>
 <td>Queens</td>
 <td>1,144</td>
-<td>32.19</td>
-<td>16.99</td>
-<td>-7.06</td>
+<td>32.08</td>
+<td>-9.65</td>
 <td>75</td>
 <td>43%</td>
 </tr>
 <tr>
 <td>Bronx</td>
 <td>219</td>
-<td>28.71</td>
-<td>14.83</td>
-<td>-6.75</td>
+<td>29.69</td>
+<td>-7.92</td>
 <td>65</td>
-<td>44%</td>
+<td>46%</td>
 </tr>
 <tr>
 <td>Staten Island</td>
 <td>78</td>
-<td>39.17</td>
-<td>20.59</td>
-<td>-7.48</td>
+<td>37.01</td>
+<td>-14.05</td>
 <td>67</td>
-<td>58%</td>
+<td>55%</td>
 </tr>
 <tr>
 <td>price &lt; $50</td>
 <td>1,003</td>
-<td>20.02</td>
-<td>16.73</td>
-<td><strong>+19.56</strong></td>
+<td>18.97</td>
+<td><strong>+17.91</strong></td>
 <td>40</td>
-<td>50%</td>
+<td>47%</td>
 </tr>
 <tr>
 <td>$50-100</td>
 <td>3,371</td>
-<td>20.72</td>
-<td>13.81</td>
-<td>+12.94</td>
+<td>21.80</td>
+<td>+11.81</td>
 <td>70</td>
-<td>30%</td>
+<td>31%</td>
 </tr>
 <tr>
 <td>$100-200</td>
 <td>3,461</td>
-<td>34.41</td>
-<td>27.15</td>
-<td>+5.30</td>
+<td>36.44</td>
+<td>+6.75</td>
 <td>139</td>
-<td>25%</td>
+<td>26%</td>
 </tr>
 <tr>
 <td>$200-500</td>
 <td>1,700</td>
-<td>93.53</td>
-<td>77.51</td>
-<td>-81.55</td>
+<td>93.58</td>
+<td>-77.30</td>
 <td>250</td>
 <td>37%</td>
 </tr>
 <tr>
 <td><strong>price ≥ $500</strong></td>
 <td>242</td>
-<td><strong>854.84</strong></td>
-<td>482.29</td>
-<td>-852.91</td>
+<td><strong>858.12</strong></td>
+<td>-858.12</td>
 <td>700</td>
-<td>122%</td>
-</tr>
-<tr>
-<td>availability = 0</td>
-<td>3,442</td>
-<td>47.47</td>
-<td>22.25</td>
-<td>-18.15</td>
-<td>100</td>
-<td>47%</td>
-</tr>
-<tr>
-<td>availability &gt; 0</td>
-<td>6,335</td>
-<td>64.96</td>
-<td>24.43</td>
-<td>-31.73</td>
-<td>115</td>
-<td>56%</td>
-</tr>
-<tr>
-<td>minimum nights ≥ 30</td>
-<td>893</td>
-<td>88.66</td>
-<td>25.14</td>
-<td>-55.44</td>
-<td>130</td>
-<td>68%</td>
-</tr>
-<tr>
-<td>minimum nights &lt; 30</td>
-<td>8,884</td>
-<td>55.80</td>
-<td>23.49</td>
-<td>-24.08</td>
-<td>101</td>
-<td>55%</td>
+<td>123%</td>
 </tr>
 </tbody>
 </table>
 <p>Patterns and our hypothesis for each:</p>
 <ol>
-<li><strong>The error follows the price, and the model is pulled towards the middle.</strong> Listings below $50 are overestimated by $19.56 on average, listings between $200 and $500 are underestimated by $81.55, and listings above $500 by $852.91. <em>Hypothesis:</em> the features do not contain what makes a listing expensive within its cell (size, number of bedrooms, finish, view are not in the file), so the network predicts something close to the median of listings that look the same, and the extremes on both sides are pulled to it. Predicting on the log scale makes this worse on the expensive side, since <code>expm1</code> of a mean log is a median, which is below the mean of a right-skewed distribution.</li>
-<li><strong>Manhattan and entire homes have the largest errors in dollars</strong>, $82.35 and <span class="arithmatex">\(84.32, but relative to their median price they are not far from the rest (55% and 53%). *Hypothesis:* they are the most expensive cells and also the ones with the widest spread of prices (EDA Figure 10), so the same relative error is more dollars. The worst neighbourhoods with at least 30 test listings are Greenwich Village (\)</span>198.50), West Village (<span class="arithmatex">\(160.37) and SoHo (\)</span>142.88), all in the expensive core where townhouses sit next to studios; the best are Ridgewood (<span class="arithmatex">\(18.83), Sunnyside (\)</span>19.11) and Jackson Heights ($19.60).</li>
-<li><strong>Listings with minimum nights ≥ 30 have a MAE of $88.66 vs $55.80.</strong> <em>Hypothesis:</em> these are the monthly rentals the EDA found at the 30-night spike (EDA Figure 4a), and some hosts type a monthly price in the nightly field. The two worst examples below with 30+ nights are exactly that.</li>
-<li><strong>Closed calendars are easier, not harder.</strong> The EDA flagged <code>availability_365 == 0</code> as a risk (stale prices); the MAE there is $47.47 against $64.96 for open calendars. <em>Hypothesis:</em> closed listings are cheaper (median $100 vs $115), and the absurd prices are mostly on open calendars (8 of the 10 worst examples below), probably hosts who are still active and experimenting with the price.</li>
-<li><strong>Staten Island has the largest relative error (58%)</strong> with only 78 test listings and 295 training listings in the EDA. <em>Hypothesis:</em> too few examples to learn its price level; the network leans on what it learned from Brooklyn and Queens.</li>
+<li><strong>The error follows the price, and the model is pulled towards the middle.</strong> Listings below $50 are overestimated by $17.91 on average, listings between $200 and $500 are underestimated by $77.30, and every one of the 242 listings above $500 is underestimated (the bias equals minus the MAE). <em>Hypothesis:</em> the features do not contain what makes a listing expensive within its cell (size, number of bedrooms, finish, view are not in the file), so the network predicts something close to the typical price of listings that look the same, and the extremes on both sides are pulled to it.</li>
+<li><strong>Manhattan and entire homes have the largest errors in dollars</strong>, $84.40 and $85.52, but relative to their median price they are not far from the rest (56% and 53%). <em>Hypothesis:</em> they are the most expensive cells and also the ones with the widest spread of prices (EDA Figure 10), so the same relative error is more dollars.</li>
+<li><strong>Staten Island has a relative error (55%) as high as Manhattan's</strong> although it is a cheap borough. <em>Hypothesis:</em> too few examples to learn its price level (78 test listings, 295 training listings in the EDA).</li>
 </ol>
 <p><strong>The 10 worst predictions:</strong></p>
 <table>
@@ -1303,8 +1110,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <tbody>
 <tr>
 <td>9,999</td>
-<td>117</td>
-<td>9,882</td>
+<td>112</td>
+<td>9,888</td>
 <td>East Harlem</td>
 <td>Entire home</td>
 <td>5</td>
@@ -1314,8 +1121,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>10,000</td>
-<td>177</td>
-<td>9,823</td>
+<td>204</td>
+<td>9,796</td>
 <td>Upper West Side</td>
 <td>Entire home</td>
 <td>30</td>
@@ -1325,8 +1132,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>7,500</td>
-<td>65</td>
-<td>7,435</td>
+<td>59</td>
+<td>7,441</td>
 <td>East Flatbush</td>
 <td>Private room</td>
 <td>1</td>
@@ -1336,8 +1143,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>7,703</td>
-<td>379</td>
-<td>7,324</td>
+<td>546</td>
+<td>7,157</td>
 <td>Upper East Side</td>
 <td>Entire home</td>
 <td>1</td>
@@ -1347,8 +1154,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>6,000</td>
-<td>243</td>
-<td>5,757</td>
+<td>255</td>
+<td>5,745</td>
 <td>Greenwich Village</td>
 <td>Entire home</td>
 <td>1</td>
@@ -1358,8 +1165,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>4,200</td>
-<td>62</td>
-<td>4,138</td>
+<td>69</td>
+<td>4,131</td>
 <td>Bedford-Stuyvesant</td>
 <td>Private room</td>
 <td>114</td>
@@ -1369,8 +1176,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>3,900</td>
-<td>165</td>
-<td>3,735</td>
+<td>153</td>
+<td>3,747</td>
 <td>Greenwich Village</td>
 <td>Entire home</td>
 <td>30</td>
@@ -1380,8 +1187,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>4,000</td>
-<td>280</td>
-<td>3,720</td>
+<td>320</td>
+<td>3,680</td>
 <td>West Village</td>
 <td>Entire home</td>
 <td>1</td>
@@ -1391,8 +1198,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>3,600</td>
-<td>215</td>
-<td>3,385</td>
+<td>241</td>
+<td>3,359</td>
 <td>Upper East Side</td>
 <td>Entire home</td>
 <td>31</td>
@@ -1402,8 +1209,8 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </tr>
 <tr>
 <td>3,613</td>
-<td>598</td>
-<td>3,015</td>
+<td>437</td>
+<td>3,176</td>
 <td>Upper West Side</td>
 <td>Entire home</td>
 <td>1</td>
@@ -1415,100 +1222,84 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 </table>
 <p>They fall into four groups, and none of them is fixed by a bigger network:</p>
 <ul>
-<li><strong>Placeholder prices</strong> ($9,999 for a Spanish Harlem apartment with a closed calendar, $7,500 for a private room in East Flatbush). Nobody pays this; the host set the price to block bookings. The network's $117 and $65 are probably closer to what these places are worth.</li>
-<li><strong>Monthly prices in the nightly field</strong> ($10,000 at 30 nights, $4,200 for a private room at 114 nights, $3,600 for "April 15 - May 15"). The minimum-nights column tells part of the story, which is why that group has a high error.</li>
-<li><strong>Real luxury listings</strong> (the two townhouses, the "(Hidden by Airbnb)" listings from a 12-listing host). The price is real, but nothing in the features says "townhouse"; the title does.</li>
+<li><strong>Placeholder prices</strong> ($9,999 for a Spanish Harlem apartment with a closed calendar, $7,500 for a private room in East Flatbush). Nobody pays this; the host set the price to block bookings. The network's $112 and $59 are probably closer to what these places are worth.</li>
+<li><strong>Monthly prices in the nightly field</strong> ($10,000 at 30 nights, $4,200 for a private room at 114 nights, $3,600 for "April 15 - May 15"). Four of the ten have a minimum stay of 30 nights or more.</li>
+<li><strong>Real luxury listings</strong> (the townhouses, the "(Hidden by Airbnb)" listings from a 12-listing host). The price is real, but nothing in the features says "townhouse"; the title does.</li>
 <li><strong>Not lodging at all</strong> ("Bar/Event/Filming Space").</li>
 </ul>
 <h3 id="permutation-importance">Permutation importance<a class="headerlink" href="#permutation-importance" title="Permanent link">&para;</a></h3>
-<p>For each of the 10 original columns we shuffled its values across the test rows (5 times, seed 42), passed the shuffled table through the fitted pipeline and measured how much the test MAE went up. Shuffling the raw column, before the pipeline, means <code>neighbourhood</code> and its 104 dummies count as one feature. Because the four location columns carry overlapping information, we also shuffled them together.</p>
+<p>For each of the 10 original columns we shuffled its values across the test rows (5 times, seed 42), passed the shuffled table through the fitted pipeline and measured how much the test MAE went up. Shuffling the raw column, before the pipeline, means <code>neighbourhood</code> and all its dummies count as one feature.</p>
 <p><img alt="Figure 6" src="figures/fig06_permutation_importance.png" /></p>
 <table>
 <thead>
 <tr>
 <th>column</th>
-<th>MLP: MAE increase ($)</th>
-<th>Ridge: MAE increase ($)</th>
+<th>MAE increase ($)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>room_type</code></td>
-<td><strong>25.98 ± 0.49</strong></td>
-<td><strong>25.57 ± 0.40</strong></td>
-</tr>
-<tr>
-<td>all location together (lat, long, borough, neighbourhood)</td>
-<td>17.46 ± 0.41</td>
-<td>14.87 ± 0.41</td>
-</tr>
-<tr>
-<td><code>availability_365</code></td>
-<td>6.65 ± 0.33</td>
-<td>3.98 ± 0.15</td>
-</tr>
-<tr>
-<td><code>minimum_nights</code></td>
-<td>6.33 ± 0.18</td>
-<td>2.44 ± 0.10</td>
+<td><strong>26.12 ± 0.46</strong></td>
 </tr>
 <tr>
 <td><code>longitude</code></td>
-<td>6.20 ± 0.19</td>
-<td>1.63 ± 0.09</td>
+<td>8.92 ± 0.25</td>
 </tr>
 <tr>
-<td><code>calculated_host_listings_count</code></td>
-<td>4.99 ± 0.36</td>
-<td>0.10 ± 0.01</td>
+<td><code>minimum_nights</code></td>
+<td>8.52 ± 0.31</td>
 </tr>
 <tr>
 <td><code>neighbourhood</code></td>
-<td>4.36 ± 0.07</td>
-<td>5.11 ± 0.13</td>
+<td>8.13 ± 0.26</td>
+</tr>
+<tr>
+<td><code>availability_365</code></td>
+<td>7.69 ± 0.35</td>
+</tr>
+<tr>
+<td><code>calculated_host_listings_count</code></td>
+<td>5.24 ± 0.25</td>
 </tr>
 <tr>
 <td><code>number_of_reviews</code></td>
-<td>3.73 ± 0.13</td>
-<td>0.98 ± 0.06</td>
-</tr>
-<tr>
-<td><code>neighbourhood_group</code></td>
-<td>3.05 ± 0.13</td>
-<td>7.23 ± 0.18</td>
-</tr>
-<tr>
-<td><code>latitude</code></td>
-<td>2.48 ± 0.16</td>
-<td>0.01 ± 0.02</td>
+<td>4.46 ± 0.20</td>
 </tr>
 <tr>
 <td><code>reviews_per_month</code></td>
-<td>1.86 ± 0.14</td>
-<td>-0.01 ± 0.01</td>
+<td>2.90 ± 0.24</td>
+</tr>
+<tr>
+<td><code>latitude</code></td>
+<td>2.89 ± 0.09</td>
+</tr>
+<tr>
+<td><code>neighbourhood_group</code></td>
+<td>2.47 ± 0.16</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Does it match the EDA?</strong> Mostly yes, with one surprise.</p>
 <ul>
-<li><em>Room type first, location second.</em> The EDA said room type is the strongest single predictor (entire homes at 2.3× a private room, Figure 10) and location the second (borough and neighbourhood raised the explained variance from 45.4% to 53.7%). Here room type costs $26 when shuffled and location as a block $17.5, far ahead of everything else, for both models.</li>
-<li><em>Latitude and longitude need a nonlinear model.</em> The EDA argued that price depends on distance to lower Manhattan, a 2-D shape a linear model on each coordinate cannot draw (Figure 9). Ridge barely uses the coordinates ($1.63 and <span class="arithmatex">\(0.01) and relies on the borough dummies (\)</span>7.23); the network does the opposite, $6.20 + $2.48 on the coordinates and $3.05 on the borough. This is the clearest sign that the network learned something the linear model did not.</li>
-<li><em>The surprise: the "how the listing is operated" features matter.</em> The EDA found weak rank correlations between price and availability, minimum nights or host portfolio size (all below 0.11 in absolute value) and PCA showed those features carry little price gradient. For the network they are the next most important after room type and location ($6.65, $6.33, <span class="arithmatex">\(4.99), and much more than for Ridge (\)</span>0.10 for host listings). They act through interactions (a 30-night minimum means something different in Manhattan and in the Bronx, a host with 50 listings prices differently from a single-listing host), which a correlation with the target cannot see.</li>
-<li><em>The redundant pair.</em> <code>reviews_per_month</code> is the least important column for both models, consistent with the EDA's finding that it overlaps with <code>number_of_reviews</code> (Spearman 0.71). It is the first column we would drop.</li>
+<li><em>Room type first.</em> The EDA said room type is the strongest single predictor (entire homes at 2.3× a private room, Figure 10). Shuffling it costs $26, about three times more than any other column.</li>
+<li><em>Location second, and longitude more than latitude.</em> <code>longitude</code> and <code>neighbourhood</code> are among the next three columns. The EDA found the same order between the coordinates: Spearman -0.44 with price for <code>longitude</code>, 0.13 for <code>latitude</code> (prices go up towards Manhattan, to the west). The borough is last, which does not mean it is useless: its information is also in the neighbourhood and in the coordinates, so the network can do without it.</li>
+<li><em>The surprise: the "how the listing is operated" features matter.</em> The EDA found weak rank correlations between price and availability, minimum nights or host portfolio size (all below 0.11 in absolute value). For the network they are about as important as the location columns ($8.52, $7.69 and $5.24). They act through interactions (a 30-night minimum means something different in Manhattan and in the Bronx), which a correlation with the target cannot see.</li>
+<li><em>The redundant pair.</em> <code>reviews_per_month</code> is among the three least important columns, consistent with the EDA's finding that it overlaps with <code>number_of_reviews</code> (Spearman 0.71). It is the first column we would drop.</li>
 </ul>
 <hr />
 <h2 id="7-conclusion">7. Conclusion<a class="headerlink" href="#7-conclusion" title="Permanent link">&para;</a></h2>
-<p><strong>Was the network worth it?</strong> As a model of this table, only partly. It beats the linear baseline by 4.95% on the test MAE, a gap 13.6 times the variation between seeds, and permutation importance shows where the gain comes from: the 2-D geography and the interactions with how the listing is operated. But it missed the 10% we set as the criterion, and gradient boosting with default settings matches it ($58.71 vs $59.10) in a fraction of the time and with no tuning. If the goal were only the lowest MAE on this dataset, we would ship the boosting model. The network was worth it as a check: it says that most of what can be learned from these 10 columns is already learned by either nonlinear model, and that the remaining error is in the data, not in the model.</p>
+<p><strong>Was the network worth it?</strong> Only partly. It beats the linear baseline by 3.19% on the test MAE ($60.20 vs $62.18), a gap 6.0 times the variation between seeds, so the improvement is real. But it missed the 10% we set as the criterion, and it costs minutes of training and a hyperparameter search where Ridge takes a second. The search itself points to the reason: networks from 23,681 to 193,025 parameters, with or without regularisation, all land within $0.77 of each other. More capacity does not help, so the remaining error is in the data, not in the model.</p>
 <p><strong>Limitations.</strong></p>
 <ul>
 <li>The features cannot see size or quality. Section 6 shows the largest errors are real luxury listings or prices that are not nightly prices, and nothing in the 10 columns separates them from ordinary listings.</li>
-<li>The target itself is noisy: placeholder prices and monthly prices are in the training set too, and the network learns from them (Huber limits how much).</li>
+<li>The target itself is noisy: placeholder prices and monthly prices are in the training set too, and with a squared-error loss the network is pulled by them.</li>
 <li>The split is random by listing, as the course asks, but one host can own up to 327 listings with a shared pricing policy (EDA section 5). A split grouped by <code>host_id</code> would probably give a higher test error.</li>
 <li>It is a mid-2019 snapshot. Prices have changed since, and New York's 2023 short-term rental rules removed a large part of these listings from the market. The model should not be used on today's prices.</li>
 <li>The hyperparameter ranking is within seed noise (section 4); the chosen configuration is one of several equivalent ones.</li>
 </ul>
-<p><strong>Who would be affected by an error.</strong> A host who used the model to set a price would be pushed towards the median of similar listings. For a cheap listing (under $50) the model overestimates by $19.56 on average, so a host in the Bronx or Queens following it would price above the market and lose bookings, and that is the group with the least room for a loss. For an expensive listing the model underestimates by hundreds of dollars, so the owner would leave money on the table. If a platform used it to flag "overpriced" listings, the flags would fall on the expensive end of Manhattan, where the error is largest. Any use like this should come with a range, not a single number.</p>
-<p><strong>With more time</strong> we would: (1) clean the target, removing or flagging placeholder prices and dividing monthly prices by 30; (2) add features from the <code>name</code> column ("townhouse", "month", "event space") with a small text encoder; (3) try a learned embedding for <code>neighbourhood</code> instead of one-hot; (4) train with a quantile (pinball) loss at 0.1, 0.5 and 0.9 to give a host a price range; (5) evaluate with a split grouped by host; (6) average the 5 seeds into one ensemble, which costs nothing at this size.</p>
+<p><strong>Who would be affected by an error.</strong> A host who used the model to set a price would be pushed towards the typical price of similar listings. For a cheap listing (under $50) the model overestimates by $17.91 on average, so a host in the Bronx or Queens following it would price above the market and lose bookings, and that is the group with the least room for a loss. For an expensive listing the model underestimates by hundreds of dollars, so the owner would leave money on the table. Any use like this should come with a range, not a single number.</p>
+<p><strong>With more time</strong> we would: (1) clean the target, removing or flagging placeholder prices and dividing monthly prices by 30; (2) use a loss that is less sensitive to those prices, such as Huber; (3) add features from the <code>name</code> column ("townhouse", "month", "event space"); (4) compare with a tree model such as gradient boosting, which often ties with a network on tables; (5) evaluate with a split grouped by host.</p>
 <h3 id="results-summary">Results summary<a class="headerlink" href="#results-summary" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1532,32 +1323,32 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
 <tr>
 <td>3</td>
 <td>Best baseline and its test metric</td>
-<td>Ridge (<code>alpha=10</code>): test MAE $62.18 (trivial: $85.93). Optional gradient boosting: $58.71 ± 0.08</td>
+<td>Ridge (<code>alpha=10</code>): test MAE $62.18 (trivial: $86.06)</td>
 </tr>
 <tr>
 <td>4</td>
 <td>Chosen network: layers × units, number of parameters, regularization</td>
-<td>2 hidden layers [256, 128], ReLU, He init, 1 linear output, Huber loss (δ=1) · 63,745 parameters (1.92 per training row) · dropout 0.2 + early stopping</td>
+<td>2 hidden layers [128, 64], ReLU, He init, 1 linear output, MSE loss · 23,681 parameters (0.71 per training row) · early stopping only (weight decay and dropout were compared and did not help)</td>
 </tr>
 <tr>
 <td>5</td>
 <td>Optimizer, learning rate, batch and the epoch it stopped at</td>
-<td>AdamW, lr 1e-3, no weight decay, batch 256 · best epoch 42 (seed 42; 20-42 over the 5 seeds), patience 20</td>
+<td>AdamW, lr 1e-3, no weight decay, batch 256 · best epoch 43 (seed 42; 27 to 43 over the 3 seeds), patience 20</td>
 </tr>
 <tr>
 <td>6</td>
 <td>The network's main metric on the test set (mean ± std, 3 seeds)</td>
-<td>MAE $59.10 ± $0.23 (5 seeds); RMSE $248.47 ± 1.10, R² 0.118 ± 0.008, R² on log-price 0.589 ± 0.002</td>
+<td>MAE $60.20 ± $0.33; RMSE $247.98 ± 0.81, R² 0.121 ± 0.006</td>
 </tr>
 <tr>
 <td>7</td>
 <td>Success criterion met?</td>
-<td>No: 4.95% lower MAE than Ridge, the criterion was 10% ($55.96). The gap to Ridge is 13.6 seed standard deviations; the network ties with gradient boosting</td>
+<td>No: 3.19% lower MAE than Ridge, the criterion was 10% (<span class="arithmatex">\(55.96). The gap to Ridge (\)</span>1.98) is 6.0 seed standard deviations</td>
 </tr>
 <tr>
 <td>8</td>
 <td>Subgroup with the largest error and its value</td>
-<td>Listings priced ≥ $500: MAE $854.84 (n = 242). Among the EDA categories: Manhattan, MAE $82.35 (n = 4,301)</td>
+<td>Listings priced ≥ $500: MAE $858.12 (n = 242). Among the EDA categories: entire homes, MAE $85.52 (n = 5,129), and Manhattan, MAE $84.40 (n = 4,301)</td>
 </tr>
 </tbody>
 </table>
@@ -1619,10 +1410,10 @@ python<span class="w"> </span>code/regression.py<span class="w">    </span><span
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "toc.integrate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "toc.integrate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
   </body>
