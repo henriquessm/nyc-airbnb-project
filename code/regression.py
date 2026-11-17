@@ -1,7 +1,7 @@
 """
 Generates every figure and every number quoted in docs/projects/regression/index.md.
 
-    python code/regression.py      # ~10 min on a GPU, longer on CPU
+    python code/regression.py      # a few minutes on a GPU, longer on CPU
 
 Figures go to docs/projects/regression/figures/, numbers to
 docs/projects/regression/results.json.
@@ -12,7 +12,6 @@ of section 6).
 """
 from __future__ import annotations
 
-import itertools
 import json
 import sys
 import time
@@ -25,11 +24,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.dummy import DummyRegressor
-from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import Ridge
-from sklearn.metrics import (
-    mean_absolute_error, median_absolute_error, r2_score, root_mean_squared_error,
-)
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,7 +48,7 @@ DPI = 140
 
 VAL_SIZE = 0.15
 MAX_EPOCHS, PATIENCE = 300, 20
-SEEDS = [42, 43, 44, 45, 46]
+SEEDS = [42, 43, 44]
 
 
 def save(fig, n, slug):
@@ -72,16 +68,12 @@ def to_dollars(log_pred):
 
 
 def metrics(y_dollars, pred_dollars):
-    """Metrics on the original scale (USD). r2_log is R^2 on log1p(price),
-    the scale the EDA used (group means gave 0.537 there, in-sample)."""
+    """MAE, RMSE and R^2 on the original scale (USD)."""
     y, p = np.asarray(y_dollars, float), np.asarray(pred_dollars, float)
     return {
         "mae": r(mean_absolute_error(y, p), 2),
         "rmse": r(root_mean_squared_error(y, p), 2),
         "r2": r(r2_score(y, p), 4),
-        "medae": r(median_absolute_error(y, p), 2),
-        "mape": r(100 * np.mean(np.abs((y - p) / y)), 2),
-        "r2_log": r(r2_score(np.log1p(y), np.log1p(p)), 4),
     }
 
 
@@ -110,7 +102,6 @@ Xtr = pre.fit_transform(X_tr)
 Xva = pre.transform(X_va)
 Xte = pre.transform(X_test)
 ytr, yva, yte = transform_target(y_tr), transform_target(y_va), transform_target(y_test)
-feat_names = list(pre.get_feature_names_out())
 
 RESULTS["split"] = {
     "train": len(X_tr), "val": len(X_va), "test": len(X_test),
@@ -126,10 +117,8 @@ log(f"split {RESULTS['split']}")
 # ============================================================================
 baselines = {}
 
-dummy_mean = DummyRegressor(strategy="mean").fit(Xtr, ytr)          # mean of log-price
-dummy_median = DummyRegressor(strategy="median").fit(Xtr, y_tr)      # median in USD
-baselines["dummy_mean"] = metrics(y_va, to_dollars(dummy_mean.predict(Xva)))
-baselines["dummy_median"] = metrics(y_va, dummy_median.predict(Xva))
+dummy = DummyRegressor(strategy="mean").fit(Xtr, ytr)  # mean of log-price
+baselines["dummy"] = metrics(y_va, to_dollars(dummy.predict(Xva)))
 
 ridge_alphas = [0.01, 0.1, 1, 10, 100]
 ridge_val = {}
@@ -140,29 +129,23 @@ best_alpha = min(ridge_val, key=lambda a: ridge_val[a]["mae"])
 ridge = Ridge(alpha=best_alpha).fit(Xtr, ytr)
 baselines["ridge"] = ridge_val[best_alpha]
 
-hgb = HistGradientBoostingRegressor(random_state=RANDOM_STATE).fit(Xtr, ytr)
-baselines["hgb"] = metrics(y_va, to_dollars(hgb.predict(Xva)))
-
 RESULTS["baselines_val"] = baselines
 RESULTS["ridge_alpha_search"] = {str(a): v for a, v in ridge_val.items()}
 RESULTS["ridge_alpha"] = best_alpha
-RESULTS["dummy_mean_value"] = r(float(np.expm1(dummy_mean.constant_.ravel()[0])), 2)
-RESULTS["dummy_median_value"] = r(float(dummy_median.constant_.ravel()[0]), 2)
+RESULTS["dummy_value"] = r(float(np.expm1(dummy.constant_.ravel()[0])), 2)
 log(f"baselines on val: { {k: v['mae'] for k, v in baselines.items()} }")
 
 # ============================================================================
 # 2-3. The network and its training (no regularisation yet)
 # ============================================================================
-Y0 = float(ytr.mean())  # output bias starts at the trivial baseline
-BASE = dict(hidden=(256, 128), dropout=0.0, norm=None, lr=1e-3, weight_decay=0.0,
-            batch_size=256)
+BASE = dict(hidden=(256, 128), lr=1e-3, weight_decay=0.0, dropout=0.0)
+BATCH = 256
 
 
 def run(cfg, seed=RANDOM_STATE):
     set_seed(seed)  # before building the model, so the seed also fixes the init
-    model = MLP(Xtr.shape[1], hidden=cfg["hidden"], dropout=cfg["dropout"],
-                norm=cfg["norm"], out_bias=Y0)
-    hist = train(model, Xtr, ytr, Xva, yva, lr=cfg["lr"], batch_size=cfg["batch_size"],
+    model = MLP(Xtr.shape[1], hidden=cfg["hidden"], dropout=cfg["dropout"])
+    hist = train(model, Xtr, ytr, Xva, yva, lr=cfg["lr"], batch_size=BATCH,
                  weight_decay=cfg["weight_decay"], max_epochs=MAX_EPOCHS,
                  patience=PATIENCE, seed=seed)
     val = metrics(y_va, to_dollars(predict(model, Xva)))
@@ -171,14 +154,13 @@ def run(cfg, seed=RANDOM_STATE):
 
 def cfg_name(c):
     h = "x".join(map(str, c["hidden"]))
-    return (f"[{h}] lr={c['lr']:g} wd={c['weight_decay']:g} "
-            f"drop={c['dropout']:g} norm={c['norm'] or '-'}")
+    return f"[{h}] lr={c['lr']:g} wd={c['weight_decay']:g} drop={c['dropout']:g}"
 
 
 base_model, base_hist, base_val = run(BASE)
 P = n_params(base_model)
 RESULTS["network_base"] = {
-    "config": {**BASE, "hidden": list(BASE["hidden"])},
+    "config": {**BASE, "hidden": list(BASE["hidden"]), "batch_size": BATCH},
     "n_params": P, "params_per_train_row": r(P / len(X_tr), 2),
     "layer_params": {
         "hidden1": Xtr.shape[1] * 256 + 256, "hidden2": 256 * 128 + 128, "out": 128 + 1,
@@ -189,115 +171,88 @@ RESULTS["network_base"] = {
     "val_loss_at_best": r(base_hist["best_val_loss"], 4),
     "train_loss_last": r(base_hist["train_loss"][-1], 4),
     "val_loss_last": r(base_hist["val_loss"][-1], 4),
+    "train_loss_epoch1": r(base_hist["train_loss"][0], 4),
     "val_loss_epoch1": r(base_hist["val_loss"][0], 4),
-    "steps_per_epoch": int(np.ceil(len(X_tr) / BASE["batch_size"])),
+    "steps_per_epoch": int(np.ceil(len(X_tr) / BATCH)),
 }
 log(f"base network: {P} params, best epoch {base_hist['best_epoch']}, val {base_val}")
 
-# a longer run without early stopping, only to see where the curves go
-# if nobody stops them (patience = max_epochs)
-set_seed(RANDOM_STATE)
-long_model = MLP(Xtr.shape[1], hidden=BASE["hidden"], out_bias=Y0)
-long_hist = train(long_model, Xtr, ytr, Xva, yva, lr=BASE["lr"],
-                  batch_size=BASE["batch_size"], max_epochs=120, patience=120,
-                  seed=RANDOM_STATE)
-RESULTS["network_long"] = {
-    "epochs": 120, "best_epoch": long_hist["best_epoch"],
-    "val_loss_best": r(long_hist["best_val_loss"], 4),
-    "val_loss_last": r(long_hist["val_loss"][-1], 4),
-    "train_loss_last": r(long_hist["train_loss"][-1], 4),
-}
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 4.3))
-for ax, h, title in [(axes[0], base_hist, "(a) with early stopping (patience 20)"),
-                     (axes[1], long_hist, "(b) 120 epochs, nobody stops it")]:
-    ep = np.arange(1, len(h["train_loss"]) + 1)
-    ax.plot(ep, h["train_loss"], color=CAT[0], label="train")
-    ax.plot(ep, h["val_loss"], color=CAT[1], label="validation")
-    ax.axvline(h["best_epoch"], color="0.4", ls="--", lw=1,
-               label=f"best epoch ({h['best_epoch']})")
-    ax.set(xlabel="epoch", ylabel="Huber loss on log1p(price)", title=title)
-    ax.legend()
-fig.suptitle("Figure 1 - Training and validation loss per epoch, base network [256x128], no regularisation")
+fig, ax = plt.subplots(figsize=(7.5, 4.3))
+ep = np.arange(1, len(base_hist["train_loss"]) + 1)
+ax.plot(ep, base_hist["train_loss"], color=CAT[0], label="train")
+ax.plot(ep, base_hist["val_loss"], color=CAT[1], label="validation")
+ax.axvline(base_hist["best_epoch"], color="0.4", ls="--", lw=1,
+           label=f"best epoch ({base_hist['best_epoch']})")
+ax.set(xlabel="epoch", ylabel="MSE on log1p(price)",
+       ylim=(None, base_hist["best_val_loss"] * 1.5),
+       title="Figure 1 - Training and validation loss per epoch,\n"
+             "base network [256x128], no regularisation")
+ax.legend()
 save(fig, 1, "curves_base")
 
 # ============================================================================
 # 4. Regularisation and hyperparameters (chosen on validation)
 # ============================================================================
-REG = {
-    "none": dict(BASE),
+# 8 configurations: the base network and one change at a time from it
+CONFIGS = {
+    "base": dict(BASE),
     "weight decay 0.05": {**BASE, "weight_decay": 0.05},
     "dropout 0.2": {**BASE, "dropout": 0.2},
-    "BatchNorm": {**BASE, "norm": "batch"},
-    "dropout 0.2 + weight decay 0.05": {**BASE, "dropout": 0.2, "weight_decay": 0.05},
+    "smaller": {**BASE, "hidden": (128, 64)},
+    "wider": {**BASE, "hidden": (512, 256)},
+    "deeper": {**BASE, "hidden": (256, 256, 128)},
+    "lr 3e-4": {**BASE, "lr": 3e-4},
+    "lr 3e-3": {**BASE, "lr": 3e-3},
 }
-reg_res, reg_hist, reg_entries = {}, {}, []
-for name, cfg in REG.items():
-    if name == "none":
+REG_NAMES = ["base", "weight decay 0.05", "dropout 0.2"]
+
+search, hists = [], {}
+for name, cfg in CONFIGS.items():
+    if name == "base":
         model, h, v = base_model, base_hist, base_val
     else:
         model, h, v = run(cfg)
-    reg_hist[name] = h
-    if name != "none":  # the base config enters the search table below
-        reg_entries.append({"name": cfg_name(cfg), "cfg": cfg, "val": v,
-                            "best_epoch": h["best_epoch"], "n_params": n_params(model)})
-    gap = h["val_loss"][h["best_epoch"] - 1] - h["train_loss"][h["best_epoch"] - 1]
-    reg_res[name] = {**v, "best_epoch": h["best_epoch"], "epochs_run": h["epochs_run"],
-                     "train_loss": r(h["train_loss"][h["best_epoch"] - 1], 4),
-                     "val_loss": r(h["best_val_loss"], 4), "gap": r(gap, 4)}
-    log(f"reg {name}: {reg_res[name]}")
-RESULTS["regularisation"] = reg_res
+    hists[name] = h
+    best_i = h["best_epoch"] - 1
+    search.append({
+        "label": name, "name": cfg_name(cfg), "cfg": cfg, "n_params": n_params(model),
+        "best_epoch": h["best_epoch"], "epochs_run": h["epochs_run"], **v,
+        "train_loss": r(h["train_loss"][best_i], 4), "val_loss": r(h["best_val_loss"], 4),
+        "gap": r(h["val_loss"][best_i] - h["train_loss"][best_i], 4),
+    })
+    log(f"config {name}: MAE {v['mae']} epoch {h['best_epoch']}")
+
+RESULTS["regularisation"] = {
+    s["label"]: {k: s[k] for k in ["mae", "rmse", "r2", "best_epoch", "epochs_run",
+                                   "train_loss", "val_loss", "gap"]}
+    for s in search if s["label"] in REG_NAMES
+}
 
 fig, axes = plt.subplots(1, 2, figsize=(12, 4.3))
-for i, (name, h) in enumerate(reg_hist.items()):
+for i, name in enumerate(REG_NAMES):
+    h = hists[name]
     ep = np.arange(1, len(h["val_loss"]) + 1)
-    axes[0].plot(ep, h["val_loss"], color=CAT[i], label=name)
+    lbl = "none (base)" if name == "base" else name
+    axes[0].plot(ep, h["val_loss"], color=CAT[i], label=lbl)
     axes[1].plot(ep, np.array(h["val_loss"]) - np.array(h["train_loss"]), color=CAT[i],
-                 label=name)
-axes[0].set(xlabel="epoch", ylabel="validation Huber loss", title="(a) validation loss",
-            ylim=(None, max(reg_res[n]["val_loss"] for n in reg_res) * 1.25))
+                 label=lbl)
+top = max(hists[n]["best_val_loss"] for n in REG_NAMES) * 1.25
+axes[0].set(xlabel="epoch", ylabel="validation MSE", title="(a) validation loss",
+            ylim=(None, top))
 axes[1].axhline(0, color="0.5", lw=0.8)
 axes[1].set(xlabel="epoch", ylabel="validation - train loss",
-            title="(b) generalisation gap")
+            title="(b) generalisation gap", ylim=(-0.05, 0.1))
 axes[0].legend(fontsize=8)
 axes[1].legend(fontsize=8)
-fig.suptitle("Figure 2 - Regularisation techniques compared with the network without any")
+fig.suptitle("Figure 2 - Weight decay and dropout compared with the network without any")
 save(fig, 2, "regularisation")
 
-# random search: 12 configurations sampled from a grid, plus the base one
-GRID = {
-    "hidden": [(128, 64), (256, 128), (512, 256), (256, 256, 128)],
-    "lr": [3e-4, 1e-3, 3e-3],
-    "weight_decay": [0.0, 0.01, 0.1],
-    "dropout": [0.0, 0.1, 0.3],
-    "norm": [None, "batch"],
-}
-combos = list(itertools.product(*GRID.values()))
-rng = np.random.default_rng(RANDOM_STATE)
-picked = rng.choice(len(combos), size=12, replace=False)
-search_cfgs = [dict(zip(GRID.keys(), combos[i]), batch_size=256) for i in picked]
-search_cfgs.append(dict(BASE))
-
-search = []
-for cfg in search_cfgs:
-    if cfg == BASE:
-        model, h, v = base_model, base_hist, base_val
-    else:
-        model, h, v = run(cfg)
-    search.append({"name": cfg_name(cfg), "cfg": cfg, "val": v,
-                   "best_epoch": h["best_epoch"], "n_params": n_params(model)})
-    log(f"search {cfg_name(cfg)}: MAE {v['mae']} epoch {h['best_epoch']}")
-# every configuration trained on validation is a candidate, including the
-# regularisation variants above: the rule is "lowest validation MAE"
-search += reg_entries
-search.sort(key=lambda s: s["val"]["mae"])
+# the rule: lowest validation MAE
+search.sort(key=lambda s: s["mae"])
 BEST = search[0]["cfg"]
-RESULTS["search"] = [
-    {"name": s["name"], "n_params": s["n_params"], "best_epoch": s["best_epoch"], **s["val"]}
-    for s in search
-]
-RESULTS["grid_size"] = len(combos)
-RESULTS["chosen"] = {**BEST, "hidden": list(BEST["hidden"]), "name": search[0]["name"],
+RESULTS["search"] = [{k: v for k, v in s.items() if k != "cfg"} for s in search]
+RESULTS["chosen"] = {**BEST, "hidden": list(BEST["hidden"]), "batch_size": BATCH,
+                     "label": search[0]["label"], "name": search[0]["name"],
                      "n_params": search[0]["n_params"]}
 log(f"chosen: {search[0]['name']}")
 
@@ -314,37 +269,31 @@ for seed in SEEDS:
     log(f"test seed {seed}: {m}")
 
 net_df = pd.DataFrame(test_runs)
-keys = ["mae", "rmse", "r2", "medae", "mape", "r2_log"]
+keys = ["mae", "rmse", "r2"]
 RESULTS["test_network_runs"] = test_runs
 RESULTS["test_network"] = {k: {"mean": r(net_df[k].mean(), 4), "std": r(net_df[k].std(ddof=1), 4)}
                            for k in keys}
+RESULTS["val_mae_seeds"] = {"mean": r(net_df["val_mae"].mean(), 2),
+                            "std": r(net_df["val_mae"].std(ddof=1), 2)}
 
-# baselines on the same test set; HGB also over the same 5 seeds
+# baselines on the same test set
 test_base = {
-    "dummy_mean": metrics(y_test, to_dollars(dummy_mean.predict(Xte))),
-    "dummy_median": metrics(y_test, dummy_median.predict(Xte)),
+    "dummy": metrics(y_test, to_dollars(dummy.predict(Xte))),
     "ridge": metrics(y_test, to_dollars(ridge.predict(Xte))),
 }
-hgb_runs = [metrics(y_test, to_dollars(
-    HistGradientBoostingRegressor(random_state=s).fit(Xtr, ytr).predict(Xte)))
-    for s in SEEDS]
-hgb_df = pd.DataFrame(hgb_runs)
-test_base["hgb"] = {k: r(hgb_df[k].mean(), 4) for k in keys}
 RESULTS["test_baselines"] = test_base
-RESULTS["test_hgb"] = {k: {"mean": r(hgb_df[k].mean(), 4), "std": r(hgb_df[k].std(ddof=1), 4)}
-                       for k in keys}
 
 net_mae = net_df["mae"].mean()
 ridge_mae = test_base["ridge"]["mae"]
 RESULTS["criterion"] = {
-    "rule": "network test MAE at least 10% lower than the best of the trivial and linear baselines",
+    "rule": "network test MAE at least 10% lower than the best baseline's",
     "reference": "ridge", "reference_mae": ridge_mae,
     "threshold_mae": r(0.9 * ridge_mae, 2),
     "network_mae": r(net_mae, 2),
     "improvement_pct": r(100 * (1 - net_mae / ridge_mae), 2),
     "met": bool(net_mae <= 0.9 * ridge_mae),
+    "gap_vs_ridge": r(ridge_mae - net_mae, 2),
     "gap_vs_ridge_in_std": r((ridge_mae - net_mae) / net_df["mae"].std(ddof=1), 1),
-    "gap_vs_hgb": r(test_base["hgb"]["mae"] - net_mae, 2),
 }
 log(f"criterion: {RESULTS['criterion']}")
 
@@ -355,8 +304,13 @@ yt = y_test.to_numpy()
 RESULTS["final_model"] = {"seed": RANDOM_STATE, "best_epoch": final_hist["best_epoch"],
                           "epochs_run": final_hist["epochs_run"],
                           "test": metrics(yt, pred_te)}
+RESULTS["fig3"] = {
+    "n_pred_gt_600": int((pred_te > 600).sum()), "n_actual_gt_600": int((yt > 600).sum()),
+    "n_resid_beyond_600": int((np.abs(yt - pred_te) > 600).sum()),
+    "n_test_ge_1000": int((yt >= 1000).sum()),
+}
 
-fig, axes = plt.subplots(1, 3, figsize=(16, 4.6))
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
 ax = axes[0]
 ax.scatter(yt, pred_te, s=4, alpha=0.2, color=CAT[0], label="test listing")
 lim = [8, 12000]
@@ -373,27 +327,19 @@ ax.set(xscale="log", ylim=(-600, 600), xlabel="predicted price (USD, log axis)",
        ylabel="residual = actual - predicted (USD)",
        title=f"(b) residuals in USD ({int((~inside).sum())} points beyond ±$600 not shown)")
 ax.legend(loc="upper left")
-ax = axes[2]
-lres = np.log1p(yt) - np.log1p(pred_te)
-ax.scatter(pred_te, lres, s=4, alpha=0.2, color=CAT[0], label="test listing")
-ax.axhline(0, color=CAT[5], lw=1.2, label="zero residual")
-ax.set(xscale="log", xlabel="predicted price (USD, log axis)",
-       ylabel="log1p(actual) - log1p(predicted)", title="(c) residuals on the log scale")
-ax.legend(loc="upper left")
 fig.suptitle("Figure 3 - Chosen network on the test set (seed 42)")
 save(fig, 3, "pred_vs_actual")
 
-fig, ax = plt.subplots(figsize=(8, 3.8))
-rows = [("Dummy (mean of log)", [test_base["dummy_mean"]["mae"]]),
-        ("Dummy (median)", [test_base["dummy_median"]["mae"]]),
+fig, ax = plt.subplots(figsize=(8, 3.2))
+rows = [("Dummy (mean of log)", [test_base["dummy"]["mae"]]),
         ("Ridge", [ridge_mae]),
-        ("Gradient boosting", list(hgb_df["mae"])),
         ("MLP (chosen)", list(net_df["mae"]))]
 for i, (name, vals) in enumerate(rows):
     ax.scatter(vals, [i] * len(vals), s=40, color=CAT[i], zorder=3,
                label=f"{name} ({len(vals)} run{'s' if len(vals) > 1 else ''})")
 ax.set_yticks(range(len(rows)), [n for n, _ in rows])
-ax.set(xlabel="test MAE (USD)", title="Figure 4 - Test MAE per model and per seed")
+ax.set(xlabel="test MAE (USD)", title="Figure 4 - Test MAE per model and per seed",
+       ylim=(-0.6, len(rows) - 0.4))
 ax.legend(fontsize=8, loc="upper right")
 save(fig, 4, "test_seeds")
 
@@ -408,27 +354,17 @@ ea["signed"] = pred_te - yt  # > 0 = overestimate
 bands = [0, 50, 100, 200, 500, np.inf]
 band_lbl = ["< $50", "$50-100", "$100-200", "$200-500", ">= $500"]
 ea["price_band"] = pd.cut(ea["price"], bins=bands, labels=band_lbl, right=False)
-ea["availability"] = np.where(ea["availability_365"] == 0, "closed (0 days)", "open (> 0 days)")
-ea["min_nights_30"] = np.where(ea["minimum_nights"] >= 30, ">= 30 nights", "< 30 nights")
 
 
 def group_err(col):
     g = ea.groupby(col, observed=True).agg(
-        n=("abs_err", "size"), mae=("abs_err", "mean"), medae=("abs_err", "median"),
+        n=("abs_err", "size"), mae=("abs_err", "mean"),
         bias=("signed", "mean"), median_price=("price", "median"))
     g["mae_rel_pct"] = 100 * g["mae"] / g["median_price"]
     return {str(k): {c: r(v, 2) for c, v in row.items()} for k, row in g.iterrows()}
 
 
-groups = {c: group_err(c) for c in
-          ["room_type", "neighbourhood_group", "price_band", "availability", "min_nights_30"]}
-hood = ea.groupby("neighbourhood").agg(n=("abs_err", "size"), mae=("abs_err", "mean"),
-                                       median_price=("price", "median"))
-hood = hood[hood["n"] >= 30].sort_values("mae", ascending=False)
-groups["neighbourhood_top5"] = {k: {c: r(v, 2) for c, v in row.items()}
-                                for k, row in hood.head(5).iterrows()}
-groups["neighbourhood_bottom3"] = {k: {c: r(v, 2) for c, v in row.items()}
-                                   for k, row in hood.tail(3).iterrows()}
+groups = {c: group_err(c) for c in ["room_type", "neighbourhood_group", "price_band"]}
 RESULTS["error_groups"] = groups
 
 worst = ea.nlargest(10, "abs_err")
@@ -441,15 +377,6 @@ RESULTS["worst"] = [
      "name": df.loc[idx, "name"]}
     for idx, row in worst.iterrows()
 ]
-top1pct = ea["abs_err"].nlargest(int(0.01 * len(ea))).sum() / ea["abs_err"].sum()
-RESULTS["error_share_top1pct"] = r(100 * top1pct, 1)
-RESULTS["n_test_ge_1000"] = int((ea["price"] >= 1000).sum())
-below = ea["price"] < 1000
-RESULTS["mae_below_1000"] = {
-    "network": r(ea.loc[below, "abs_err"].mean(), 2),
-    "ridge": r(np.abs(yt - to_dollars(ridge.predict(Xte)))[below.to_numpy()].mean(), 2),
-    "rmse_network": r(root_mean_squared_error(yt[below.to_numpy()], pred_te[below.to_numpy()]), 2),
-}
 
 fig, axes = plt.subplots(1, 3, figsize=(16, 4.3), sharey=False)
 for ax, col, title in [(axes[0], "room_type", "(a) room type"),
@@ -467,45 +394,30 @@ fig.suptitle("Figure 5 - Test error of the chosen network per subgroup")
 save(fig, 5, "error_groups")
 
 # permutation importance on the raw columns (before the pipeline), so a
-# categorical with 109 dummies counts as one feature
+# categorical with ~100 dummies counts as one feature
 RAW = NUMERIC_FEATURES + CATEGORICAL_FEATURES
-GROUPS = {c: [c] for c in RAW}
-GROUPS["all location (lat, long, borough, neighbourhood)"] = [
-    "latitude", "longitude", "neighbourhood_group", "neighbourhood"]
 N_REPEATS = 5
 
+base_mae = mean_absolute_error(yt, pred_te)
+prng = np.random.default_rng(RANDOM_STATE)
+pi = {}
+for col in RAW:
+    deltas = []
+    for _ in range(N_REPEATS):
+        Xp = X_test.copy()
+        Xp[col] = Xp[col].to_numpy()[prng.permutation(len(Xp))]
+        pred = to_dollars(predict(final_model, pre.transform(Xp)))
+        deltas.append(mean_absolute_error(yt, pred) - base_mae)
+    pi[col] = {"mean": r(np.mean(deltas), 2), "std": r(np.std(deltas, ddof=1), 2)}
+RESULTS["perm_importance"] = {"network": pi, "repeats": N_REPEATS}
 
-def perm_importance(predict_fn):
-    base = mean_absolute_error(yt, predict_fn(pre.transform(X_test)))
-    prng = np.random.default_rng(RANDOM_STATE)
-    out = {}
-    for name, cols in GROUPS.items():
-        deltas = []
-        for _ in range(N_REPEATS):
-            Xp = X_test.copy()
-            idx = prng.permutation(len(Xp))
-            for c in cols:  # same permutation for the whole group, rows stay coherent
-                Xp[c] = Xp[c].to_numpy()[idx]
-            deltas.append(mean_absolute_error(yt, predict_fn(pre.transform(Xp))) - base)
-        out[name] = {"mean": r(np.mean(deltas), 2), "std": r(np.std(deltas, ddof=1), 2)}
-    return out
-
-
-pi_net = perm_importance(lambda X: to_dollars(predict(final_model, X)))
-pi_ridge = perm_importance(lambda X: to_dollars(ridge.predict(X)))
-RESULTS["perm_importance"] = {"network": pi_net, "ridge": pi_ridge, "repeats": N_REPEATS}
-
-order = sorted(RAW, key=lambda c: pi_net[c]["mean"])
-fig, ax = plt.subplots(figsize=(9, 4.6))
-y = np.arange(len(order))
-ax.barh(y + 0.2, [pi_net[c]["mean"] for c in order], height=0.4, color=CAT[0],
-        xerr=[pi_net[c]["std"] for c in order], label="MLP")
-ax.barh(y - 0.2, [pi_ridge[c]["mean"] for c in order], height=0.4, color=CAT[1],
-        xerr=[pi_ridge[c]["std"] for c in order], label="Ridge")
-ax.set_yticks(y, order)
+order = sorted(RAW, key=lambda c: pi[c]["mean"])
+fig, ax = plt.subplots(figsize=(9, 4.3))
+ax.barh(order, [pi[c]["mean"] for c in order], color=CAT[0],
+        xerr=[pi[c]["std"] for c in order], label="MLP (chosen)")
 ax.set(xlabel="increase in test MAE when the column is shuffled (USD)",
        title=f"Figure 6 - Permutation importance on the test set ({N_REPEATS} repeats)")
-ax.legend()
+ax.legend(loc="lower right")
 save(fig, 6, "permutation_importance")
 
 RESULTS["runtime_s"] = r(time.time() - T0, 0)

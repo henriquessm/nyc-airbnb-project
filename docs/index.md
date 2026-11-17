@@ -7,7 +7,7 @@ The project has a few deliverables and each one gets its own page:
 | | deliverable | status |
 |---|---|---|
 | 1 | [Exploratory Data Analysis](projects/eda/index.md) - data dictionary, quality, distributions, correlations and the preprocessing pipeline | done |
-| 2 | [Regression with a neural network](projects/regression/index.md) - baselines, MLP in PyTorch, regularisation, hyperparameter search, test evaluation over 5 seeds and error analysis | done |
+| 2 | [Regression with a neural network](projects/regression/index.md) - baselines, MLP in PyTorch, regularisation, hyperparameter search, test evaluation over 3 seeds and error analysis | done |
 
 ## Running the code
 

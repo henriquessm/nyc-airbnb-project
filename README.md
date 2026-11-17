@@ -30,7 +30,7 @@ mkdocs.yml
 pip install -r requirements.txt
 python code/eda.py          # ~2 min, t-SNE and UMAP are the slow part
 python code/preprocess.py   # prints shapes, NaN check and feature names
-python code/regression.py   # ~5 min on a GPU, CPU works too (slower)
+python code/regression.py   # about 4 minutes on a CPU
 mkdocs serve                # local preview of the site
 mkdocs gh-deploy            # builds and pushes the site to the gh-pages branch
 ```

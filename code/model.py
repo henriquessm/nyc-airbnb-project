@@ -27,18 +27,14 @@ def set_seed(seed: int) -> None:
 
 
 class MLP(nn.Module):
-    """Linear -> [BatchNorm | LayerNorm] -> ReLU -> [Dropout] per hidden layer,
-    then one linear unit.
+    """Linear -> ReLU -> [Dropout] per hidden layer, then one linear unit.
 
-    Dropout goes after the normalisation layer (the order the course recommends,
-    dropout before BatchNorm shifts the variance BN sees between train and eval).
     Hidden weights use He (Kaiming) normal init, made for ReLU: half of the units
     are zero on average, so the variance is scaled by 2 / fan_in to keep the
     activations from shrinking layer after layer. Biases start at zero.
     """
 
-    def __init__(self, n_in: int, hidden=(256, 128), dropout: float = 0.0,
-                 norm: str | None = None, out_bias: float = 0.0):
+    def __init__(self, n_in: int, hidden=(256, 128), dropout: float = 0.0):
         super().__init__()
         layers, d = [], n_in
         for h in hidden:
@@ -46,19 +42,12 @@ class MLP(nn.Module):
             nn.init.kaiming_normal_(lin.weight, nonlinearity="relu")
             nn.init.zeros_(lin.bias)
             layers.append(lin)
-            if norm == "batch":
-                layers.append(nn.BatchNorm1d(h))
-            elif norm == "layer":
-                layers.append(nn.LayerNorm(h))
             layers.append(nn.ReLU())
             if dropout > 0:
                 layers.append(nn.Dropout(dropout))
             d = h
         self.body = nn.Sequential(*layers)
         self.out = nn.Linear(d, 1)
-        # start from the trivial baseline (mean of the training log-price)
-        # instead of 0, so the first epochs are not spent learning the offset
-        nn.init.constant_(self.out.bias, out_bias)
 
     def forward(self, x):
         return self.out(self.body(x)).squeeze(-1)
@@ -79,25 +68,18 @@ def predict(model: nn.Module, X) -> np.ndarray:
 
 
 def train(model: nn.Module, X_tr, y_tr, X_va, y_va, *, lr=1e-3, batch_size=256,
-          weight_decay=0.0, max_epochs=300, patience=20, seed=42, loss_fn=None):
-    """Mini-batch AdamW with early stopping on the validation loss.
+          weight_decay=0.0, max_epochs=300, patience=20, seed=42):
+    """Mini-batch AdamW with MSE loss and early stopping on the validation loss.
 
-    Weight decay only applies to the weight matrices (not to biases or the
-    normalisation gains), as in the AdamW recipe. Returns a history dict with the
-    per-epoch train and validation loss (both computed in eval mode on the full
-    set, so dropout does not inflate the training curve) and the best epoch.
-    The model comes back with the best weights loaded.
+    Returns a history dict with the per-epoch train and validation loss (both
+    computed in eval mode on the full set, so dropout does not inflate the
+    training curve) and the best epoch. The model comes back with the best
+    weights loaded.
     """
     set_seed(seed)
     model.to(DEVICE)
-    loss_fn = loss_fn or nn.HuberLoss(delta=1.0)
-    decay = [p for p in model.parameters() if p.ndim >= 2]
-    no_decay = [p for p in model.parameters() if p.ndim < 2]
-    opt = torch.optim.AdamW(
-        [{"params": decay, "weight_decay": weight_decay},
-         {"params": no_decay, "weight_decay": 0.0}],
-        lr=lr,
-    )
+    loss_fn = nn.MSELoss()
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     Xt, yt, Xv, yv = _tensor(X_tr), _tensor(y_tr), _tensor(X_va), _tensor(y_va)
     gen = torch.Generator(device="cpu").manual_seed(seed)
     n = len(Xt)
@@ -109,8 +91,6 @@ def train(model: nn.Module, X_tr, y_tr, X_va, y_va, *, lr=1e-3, batch_size=256,
         perm = torch.randperm(n, generator=gen).to(DEVICE)
         for i in range(0, n, batch_size):
             idx = perm[i:i + batch_size]
-            if len(idx) < 2:  # BatchNorm cannot normalise a batch of one
-                continue
             opt.zero_grad()
             loss = loss_fn(model(Xt[idx]), yt[idx])
             loss.backward()
@@ -142,7 +122,7 @@ if __name__ == "__main__":
     set_seed(0)
     X = np.random.randn(2000, 5)
     y = X.sum(axis=1)
-    m = MLP(5, hidden=(32,), out_bias=0.0)
+    m = MLP(5, hidden=(32,))
     h = train(m, X[:1500], y[:1500], X[1500:], y[1500:], lr=3e-3, max_epochs=200)
     mae = np.abs(predict(m, X[1500:]) - y[1500:]).mean()
     print(f"params {n_params(m)}, stopped at {h['epochs_run']}, val MAE {mae:.3f}")
