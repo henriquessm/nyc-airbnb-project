@@ -105,6 +105,8 @@ def split_data(df: pd.DataFrame, test_size: float = 0.2, n_bins: int = 10):
     same price range (the target is extremely skewed)."""
     X = df.drop(columns=[TARGET] + DROP_COLS)
     y = df[TARGET]
+    # Preservar faixas de preço reduz desequilíbrio acidental dos anúncios caros.
+    # O log é monotônico: os decis são essencialmente iguais aos do preço bruto.
     strata = pd.qcut(np.log1p(y), q=n_bins, labels=False, duplicates="drop")
     return train_test_split(
         X, y, test_size=test_size, random_state=RANDOM_STATE, stratify=strata
@@ -116,14 +118,15 @@ def build_preprocessor() -> ColumnTransformer:
 
     geo       : lat/long -> median impute -> standardize
     bounded   : availability_365 (0..365, no outliers) -> median impute -> standardize
-    heavy     : counts with very long right tails -> median impute (reviews_per_month
-                is NaN exactly when there are no reviews, so the median of the
-                train set is replaced by a constant 0 for that column) ->
+    heavy     : counts with very long right tails -> constant-zero imputation
+                (only reviews_per_month is missing in this dataset, meaning
+                no reviews) ->
                 clip at the 1st/99th train percentiles -> log1p -> standardize
     low card  : neighbourhood_group, room_type -> one-hot, unknown ignored
     high card : neighbourhood (221 values) -> one-hot with rare + unseen
                 categories grouped into a single infrequent column
     """
+    # Escalas comparáveis ajudam a otimização; coordenadas não são contagens.
     geo = Pipeline([
         ("impute", SimpleImputer(strategy="median")),
         ("scale", StandardScaler()),
@@ -132,6 +135,9 @@ def build_preprocessor() -> ColumnTransformer:
         ("impute", SimpleImputer(strategy="median")),
         ("scale", StandardScaler()),
     ])
+    # Caudas longas: limitar extremos, comprimir escala e só então padronizar.
+    # Zero é justificável para reviews_per_month ausente neste arquivo;
+    # futuras ausências nas outras contagens exigiriam uma nova análise.
     heavy = Pipeline([
         # reviews_per_month is the only one with NaN and NaN means "no reviews"
         ("impute", SimpleImputer(strategy="constant", fill_value=0)),
@@ -139,10 +145,13 @@ def build_preprocessor() -> ColumnTransformer:
         ("log", FunctionTransformer(np.log1p, feature_names_out="one-to-one")),
         ("scale", StandardScaler()),
     ])
+    # One-hot evita impor ordem numérica artificial entre categorias.
     low_card = Pipeline([
         ("impute", SimpleImputer(strategy="most_frequent")),
         ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
     ])
+    # Menos de 30 exemplos oferece pouco suporte para um efeito próprio de bairro.
+    # Esse limiar é heurístico; categorias raras compartilham uma representação.
     high_card = Pipeline([
         ("impute", SimpleImputer(strategy="most_frequent")),
         ("onehot", OneHotEncoder(
@@ -166,6 +175,8 @@ def build_preprocessor() -> ColumnTransformer:
 
 def transform_target(y: pd.Series) -> np.ndarray:
     """log1p(price): what the network should actually be trained on."""
+    # Comprime o alvo: prioriza diferenças relativas em vez de erros monetários brutos.
+    # A inversa expm1 será aplicada antes de medir MAE/RMSE em dólares.
     return np.log1p(y.to_numpy())
 
 

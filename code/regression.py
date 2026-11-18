@@ -64,6 +64,7 @@ def r(x, nd=3):
 
 
 def to_dollars(log_pred):
+    # Volta à unidade de negócio. Inverter a média do log não dá a média em dólares.
     return np.expm1(log_pred)
 
 
@@ -117,9 +118,13 @@ log(f"split {RESULTS['split']}")
 # ============================================================================
 baselines = {}
 
+# Referência sem informação: verificar se usar atributos melhora uma constante.
+# A constante é média no log, não média aritmética do preço em dólares.
 dummy = DummyRegressor(strategy="mean").fit(Xtr, ytr)  # mean of log-price
 baselines["dummy"] = metrics(y_va, to_dollars(dummy.predict(Xva)))
 
+# Ridge testa se uma solução linear barata já resolve grande parte do problema.
+# Alpha controla a penalização L2; escolhemos usando apenas a validação.
 ridge_alphas = [0.01, 0.1, 1, 10, 100]
 ridge_val = {}
 for a in ridge_alphas:
@@ -138,6 +143,7 @@ log(f"baselines on val: { {k: v['mae'] for k, v in baselines.items()} }")
 # ============================================================================
 # 2-3. The network and its training (no regularisation yet)
 # ============================================================================
+# Ponto de partida para comparar capacidade e regularização, não um ótimo teórico.
 BASE = dict(hidden=(256, 128), lr=1e-3, weight_decay=0.0, dropout=0.0)
 BATCH = 256
 
@@ -194,6 +200,8 @@ save(fig, 1, "curves_base")
 # 4. Regularisation and hyperparameters (chosen on validation)
 # ============================================================================
 # 8 configurations: the base network and one change at a time from it
+# Um fator por vez facilita interpretar resultados e limita custo.
+# Não explora interações entre os hiperparâmetros.
 CONFIGS = {
     "base": dict(BASE),
     "weight decay 0.05": {**BASE, "weight_decay": 0.05},
@@ -248,6 +256,8 @@ fig.suptitle("Figure 2 - Weight decay and dropout compared with the network with
 save(fig, 2, "regularisation")
 
 # the rule: lowest validation MAE
+# As métricas já estão arredondadas: empates preservam a ordem de inserção.
+# A rede menor e lr 3e-4 empatam a centavos; não há superioridade clara demonstrada.
 search.sort(key=lambda s: s["mae"])
 BEST = search[0]["cfg"]
 RESULTS["search"] = [{k: v for k, v in s.items() if k != "cfg"} for s in search]
@@ -260,6 +270,8 @@ log(f"chosen: {search[0]['name']}")
 # 5. Test evaluation, run once, after every choice above is frozen
 # ============================================================================
 test_runs, test_models = [], {}
+# Seeds medem variação do treinamento no mesmo split; não são validação cruzada.
+# Calculamos média de métricas de modelos separados, sem ensemble das previsões.
 for seed in SEEDS:
     model, h, v = run(BEST, seed=seed)
     m = metrics(y_test, to_dollars(predict(model, Xte)))
@@ -285,6 +297,8 @@ RESULTS["test_baselines"] = test_base
 
 net_mae = net_df["mae"].mean()
 ridge_mae = test_base["ridge"]["mae"]
+# Ganho mínimo de 10% é a regra de aceitação do projeto, sem cálculo de lucro.
+# Ganhar pouco em precisão pode não compensar o custo adicional da rede.
 RESULTS["criterion"] = {
     "rule": "network test MAE at least 10% lower than the best baseline's",
     "reference": "ridge", "reference_mae": ridge_mae,
@@ -356,6 +370,8 @@ band_lbl = ["< $50", "$50-100", "$100-200", "$200-500", ">= $500"]
 ea["price_band"] = pd.cut(ea["price"], bins=bands, labels=band_lbl, right=False)
 
 
+# A média global pode esconder segmentos mal atendidos.
+# MAE/mediana do grupo contextualiza a escala, mas não é MAPE.
 def group_err(col):
     g = ea.groupby(col, observed=True).agg(
         n=("abs_err", "size"), mae=("abs_err", "mean"),
@@ -367,6 +383,8 @@ def group_err(col):
 groups = {c: group_err(c) for c in ["room_type", "neighbourhood_group", "price_band"]}
 RESULTS["error_groups"] = groups
 
+# Casos extremos geram hipóteses de qualidade do alvo; títulos não provam
+# preço mensal, luxo ou intenção de bloquear reservas. Não os excluímos aqui.
 worst = ea.nlargest(10, "abs_err")
 worst_cols = ["price", "pred", "abs_err", "neighbourhood", "room_type", "minimum_nights",
               "number_of_reviews", "availability_365", "calculated_host_listings_count"]
@@ -395,6 +413,8 @@ save(fig, 5, "error_groups")
 
 # permutation importance on the raw columns (before the pipeline), so a
 # categorical with ~100 dummies counts as one feature
+# Importância mede dependência preditiva, não causalidade.
+# Variáveis correlacionadas podem se substituir e diluir sua importância individual.
 RAW = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 N_REPEATS = 5
 

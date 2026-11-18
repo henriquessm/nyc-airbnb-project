@@ -47,6 +47,7 @@ class MLP(nn.Module):
                 layers.append(nn.Dropout(dropout))
             d = h
         self.body = nn.Sequential(*layers)
+        # Uma saída contínua para log1p(price); sem sigmoid que limite o intervalo.
         self.out = nn.Linear(d, 1)
 
     def forward(self, x):
@@ -78,7 +79,11 @@ def train(model: nn.Module, X_tr, y_tr, X_va, y_va, *, lr=1e-3, batch_size=256,
     """
     set_seed(seed)
     model.to(DEVICE)
+    # A perda compara log-preços: reduz a dominância monetária de anúncios extremos.
+    # MAE em dólares é a métrica de seleção, calculada fora deste loop.
     loss_fn = nn.MSELoss()
+    # AdamW adapta o passo por parâmetro; weight_decay=0 desliga a penalização.
+    # Não houve comparação com outros otimizadores neste experimento.
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     Xt, yt, Xv, yv = _tensor(X_tr), _tensor(y_tr), _tensor(X_va), _tensor(y_va)
     gen = torch.Generator(device="cpu").manual_seed(seed)
@@ -88,20 +93,24 @@ def train(model: nn.Module, X_tr, y_tr, X_va, y_va, *, lr=1e-3, batch_size=256,
     best, wait, best_state, best_epoch = float("inf"), 0, None, 0
     for epoch in range(1, max_epochs + 1):
         model.train()
+        # Embaralhar evita que a ordem do CSV determine a sequência de atualização.
         perm = torch.randperm(n, generator=gen).to(DEVICE)
         for i in range(0, n, batch_size):
             idx = perm[i:i + batch_size]
+            # Limpa gradientes do batch anterior, calcula os novos e atualiza os pesos.
             opt.zero_grad()
             loss = loss_fn(model(Xt[idx]), yt[idx])
             loss.backward()
             opt.step()
 
+        # Mede ambos os conjuntos sem dropout para comparar as curvas justamente.
         model.eval()
         with torch.no_grad():
             tr_loss = loss_fn(model(Xt), yt).item()
             va_loss = loss_fn(model(Xv), yv).item()
         hist["train_loss"].append(tr_loss)
         hist["val_loss"].append(va_loss)
+        # Escolhemos a época pela MSE log da validação, sem consultar o teste.
         if va_loss < best:
             best, wait, best_epoch = va_loss, 0, epoch
             best_state = copy.deepcopy(model.state_dict())  # keep the best weights
@@ -110,6 +119,7 @@ def train(model: nn.Module, X_tr, y_tr, X_va, y_va, *, lr=1e-3, batch_size=256,
             if wait == patience:
                 break
 
+    # Entregamos o melhor checkpoint, pois as últimas épocas podem ter overfitting.
     model.load_state_dict(best_state)
     hist["best_epoch"] = best_epoch
     hist["epochs_run"] = len(hist["val_loss"])

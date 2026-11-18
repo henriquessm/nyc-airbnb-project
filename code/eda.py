@@ -72,6 +72,8 @@ def price_colorbar(mappable, ax):
 # ============================================================================
 # 1. Initial inspection (on the raw file)
 # ============================================================================
+# Auditoria inicial: entender qualidade e significado dos dados antes da modelagem.
+# Esta etapa vê o arquivo completo; o teste não é totalmente invisível na EDA.
 raw = pd.read_csv(DATA_PATH)
 RESULTS["raw_shape"] = list(raw.shape)
 
@@ -266,6 +268,8 @@ save(fig, 6, "top_neighbourhoods")
 # 3. Bivariate
 # ============================================================================
 cols = NUMERIC_FEATURES + [TARGET]
+# Spearman captura relações monotônicas e é menos dominado pelos extremos.
+# Correlação marginal baixa não exclui interações úteis, nem prova causalidade.
 sp = train[cols].corr(method="spearman")
 pe = train[cols].corr(method="pearson")
 pairs = []
@@ -423,6 +427,8 @@ fig.suptitle("Figure 14 - Heavy-tailed features before (top, log count axis) and
 save(fig, 14, "before_after")
 
 # ---- PCA (pipeline output minus the sparse neighbourhood dummies) --------------
+# Projeção exploratória: retiramos os muitos indicadores de bairro para leitura.
+# PCA não fornece atributos à rede e variância explicada não é precisão preditiva.
 keep = [i for i, n in enumerate(names) if not n.startswith("hood__")]
 Z = X_train_t[:, keep]
 Z_names = [names[i].split("__", 1)[1] for i in keep]
@@ -446,6 +452,7 @@ RESULTS["pca_pc1_spearman_price"] = r(pd.Series(Zp[:, 0]).corr(pd.Series(train.l
 RESULTS["pca_pc2_spearman_price"] = r(pd.Series(Zp[:, 1]).corr(pd.Series(train.log_price.values), method="spearman"))
 
 rng = np.random.RandomState(RANDOM_STATE)
+# Mesma amostra nas projeções: comparação consistente com custo computacional menor.
 idx = rng.choice(len(Z), 5000, replace=False)
 lp = train.log_price.values
 
@@ -470,6 +477,7 @@ save(fig, 16, "pca_loadings")
 # ---- t-SNE -------------------------------------------------------------------
 Zs = Z[idx]; lps = lp[idx]
 order = np.argsort(lps)
+# Duas escalas de vizinhança para explorar estabilidade visual, sem escolher modelo.
 perps = [30, 100]
 fig, axes = plt.subplots(1, 2, figsize=(13, 5.4))
 tsne_time = {}
@@ -486,6 +494,7 @@ RESULTS["tsne_seconds"] = tsne_time
 
 # ---- UMAP --------------------------------------------------------------------
 import umap  # noqa: E402  (slow import, keep it here)
+# UMAP compara estrutura mais local e mais ampla; grupos visuais não são classes.
 nns = [15, 100]
 fig, axes = plt.subplots(1, 2, figsize=(13, 5.4))
 umap_time = {}
